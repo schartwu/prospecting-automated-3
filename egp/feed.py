@@ -71,12 +71,26 @@ def _parse(raw: bytes) -> tuple[dict, list]:
     return meta, items
 
 
-def fetch(params: dict, timeout: float = 20, retries: int = 1) -> FeedResult:
+def _get(params: dict, max_seconds: float) -> requests.Response:
+    """GET with a wall-clock cap. A normal read timeout is not enough: the server sometimes
+    trickles bytes slowly, which keeps resetting the read timeout and hangs the request."""
+    started = time.monotonic()
+    with _session.get(BASE_URL, params=params, timeout=(10, 30), stream=True) as resp:
+        body = bytearray()
+        for chunk in resp.iter_content(8192):
+            body += chunk
+            if time.monotonic() - started > max_seconds:
+                raise TimeoutError(f"no complete response within {max_seconds}s")
+        resp._content = bytes(body)
+        return resp
+
+
+def fetch(params: dict, max_seconds: float = 60, retries: int = 1) -> FeedResult:
     started = time.monotonic()
     last_error = None
     for attempt in range(retries + 1):
         try:
-            resp = _session.get(BASE_URL, params=params, timeout=timeout)
+            resp = _get(params, max_seconds)
             if resp.status_code != 200:
                 last_error = f"HTTP {resp.status_code}"
             else:

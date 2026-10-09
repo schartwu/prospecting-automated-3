@@ -2,8 +2,9 @@ name: Phase 0 - Discovery
 
 on:
   schedule:
-    # 09:30, 12:30, 15:30, 18:30 Asia/Bangkok, Mon-Sat (GitHub may start these late)
-    - cron: "30 2,5,8,11 * * 1-6"
+    # 15:30 Asia/Bangkok, Mon-Sat (GitHub may start it late). Once a day keeps us inside the
+    # free Actions minutes for private repos while a run takes ~100 min.
+    - cron: "30 8 * * 1-6"
   workflow_dispatch:
     inputs:
       mode:
@@ -22,7 +23,7 @@ concurrency:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +35,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Collect
-        run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}"
+        run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}" --max-minutes 100
 
       - name: Summarise
         if: always()
