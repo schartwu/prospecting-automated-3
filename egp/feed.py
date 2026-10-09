@@ -71,7 +71,7 @@ def _parse(raw: bytes) -> tuple[dict, list]:
     return meta, items
 
 
-def fetch(params: dict, timeout: float = 40, retries: int = 2) -> FeedResult:
+def fetch(params: dict, timeout: float = 20, retries: int = 1) -> FeedResult:
     started = time.monotonic()
     last_error = None
     for attempt in range(retries + 1):

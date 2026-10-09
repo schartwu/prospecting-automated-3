@@ -37,9 +37,11 @@ jobs:
         run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}"
 
       - name: Summarise
+        if: always()
         run: python scripts/report_discovery.py
 
       - name: Commit data
+        if: always()
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action Bot"
