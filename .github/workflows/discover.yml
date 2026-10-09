@@ -37,16 +37,25 @@ jobs:
       - name: Collect
         run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}" --max-minutes 100
 
-      - name: Summarise
+      - name: Keep raw data as a run artifact
         if: always()
-        run: python scripts/report_discovery.py
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-${{ github.run_id }}
+          path: data/discovery
+          retention-days: 30
 
-      - name: Commit data
+      # Raw data lives in a new folder per run, so it never conflicts. The summary is rebuilt
+      # after pulling, so it always covers every run, including ones that finished meanwhile.
+      - name: Commit data and summary
         if: always()
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action Bot"
-          git add data/discovery reports
-          git commit -m "Discovery run (${{ inputs.mode || 'types' }})" || exit 0
+          git add data/discovery
+          git commit -m "Discovery data (${{ inputs.mode || 'types' }})" || true
           git pull --rebase origin main
+          python scripts/report_discovery.py
+          git add reports
+          git commit -m "Discovery summary" || true
           git push origin main
