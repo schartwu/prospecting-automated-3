@@ -67,7 +67,7 @@ def build_requests(mode):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["types", "sweep"], default="types")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--limit", type=int, default=0, help="only send the first N requests (testing)")
     ap.add_argument("--max-minutes", type=float, default=45,
                     help="stop sending new requests after this long and keep what was collected")

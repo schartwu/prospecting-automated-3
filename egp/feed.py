@@ -85,12 +85,17 @@ def _get(params: dict, max_seconds: float) -> requests.Response:
         return resp
 
 
-def fetch(params: dict, max_seconds: float = 60, retries: int = 1) -> FeedResult:
+def fetch(params: dict, max_seconds: float = 60, retries: int = 2) -> FeedResult:
     started = time.monotonic()
     last_error = None
     for attempt in range(retries + 1):
         try:
             resp = _get(params, max_seconds)
+            if resp.status_code == 429:
+                # Rate limited: back off much longer than for other errors.
+                last_error = "HTTP 429"
+                time.sleep(30 * (attempt + 1))
+                continue
             if resp.status_code != 200:
                 last_error = f"HTTP {resp.status_code}"
             else:
