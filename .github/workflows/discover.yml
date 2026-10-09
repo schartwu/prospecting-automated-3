@@ -1,0 +1,49 @@
+name: Phase 0 - Discovery
+
+on:
+  schedule:
+    # 09:30, 12:30, 15:30, 18:30 Asia/Bangkok, Mon-Sat (GitHub may start these late)
+    - cron: "30 2,5,8,11 * * 1-6"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "types = known depts x all announce types, sweep = scan deptId 0001-9999"
+        type: choice
+        options: [types, sweep]
+        default: types
+
+permissions:
+  contents: write
+
+concurrency:
+  group: discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Collect
+        run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}"
+
+      - name: Summarise
+        run: python scripts/report_discovery.py
+
+      - name: Commit data
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action Bot"
+          git add data/discovery reports
+          git commit -m "Discovery run (${{ inputs.mode || 'types' }})" || exit 0
+          git pull --rebase origin main
+          git push origin main
