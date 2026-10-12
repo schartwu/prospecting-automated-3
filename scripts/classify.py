@@ -8,7 +8,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from egp.classify import DEFAULT_MODEL, classify_titles, list_models  # noqa: E402
+from egp.classify import DEFAULT_MODEL, QuotaExhausted, classify_titles, list_models  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 TYPES = ["P0", "15", "B0", "D0", "W0"]
@@ -16,7 +16,7 @@ TYPES = ["P0", "15", "B0", "D0", "W0"]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", type=int, default=80, help="titles per Gemini request")
+    ap.add_argument("--batch", type=int, default=200, help="titles per Gemini request")
     ap.add_argument("--max-titles", type=int, default=5000)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--list-models", action="store_true")
@@ -35,7 +35,11 @@ def main():
         if not rows or all(r["title"] in seen for r in rows):
             break  # nothing left, or the same titles came back unsaved: stop instead of looping
         seen.update(r["title"] for r in rows)
-        verdicts = classify_titles(rows, key, args.model)
+        try:
+            verdicts = classify_titles(rows, key, args.model)
+        except QuotaExhausted as e:
+            print(f"Gemini daily quota used up for every model; the rest continues on the next run. ({e})")
+            break
         saved += db.rpc("save_title_classifications", {"p_types": TYPES, "p_rows": verdicts})
         done_titles += len(rows)
         relevant += sum(v["relevant"] for v in verdicts)

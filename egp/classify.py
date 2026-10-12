@@ -7,8 +7,13 @@ import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-# Tried in order when the main model is overloaded (HTTP 503) or rate limited.
-FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash"]
+# Tried in order when a model's quota is used up or it is overloaded. On the free tier each model has
+# its own small daily request quota (20/day), so batches are large and the models share the load.
+FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-2.5-flash"]
+
+
+class QuotaExhausted(RuntimeError):
+    """Every model's daily quota is used up; the rest waits for tomorrow."""
 
 CATEGORIES = [
     "กระดาษและเครื่องเขียน",
@@ -65,32 +70,52 @@ SCHEMA = {
 def classify_titles(rows: list[dict], api_key: str, model: str = DEFAULT_MODEL) -> list[dict]:
     """rows: [{'title', 'announce_types', 'methods'}]. Returns one verdict dict per row, same order.
     Falls back to other models when one is overloaded."""
-    errors = []
+    errors, exhausted = [], []
     for m in [model, *[f for f in FALLBACK_MODELS if f != model]]:
+        if m in _exhausted_models:
+            continue
         try:
             return _classify_with(rows, api_key, m)
+        except _DailyQuota as e:
+            _exhausted_models.add(m)
+            exhausted.append(m)
+            errors.append(str(e))
         except RuntimeError as e:
             errors.append(str(e))
+    if all(m in _exhausted_models for m in [model, *FALLBACK_MODELS]):
+        raise QuotaExhausted(" | ".join(errors))
     raise RuntimeError(" | ".join(errors))
 
 
-def _classify_with(rows: list[dict], api_key: str, model: str, retries: int = 3) -> list[dict]:
+class _DailyQuota(RuntimeError):
+    pass
+
+
+_exhausted_models: set[str] = set()
+
+
+def _classify_with(rows: list[dict], api_key: str, model: str, retries: int = 2) -> list[dict]:
     lines = []
     for i, r in enumerate(rows):
         hint = ", ".join(filter(None, [*(r.get("announce_types") or []), *(r.get("methods") or [])]))
         lines.append(f"{i}. [{hint}] {r['title'][:400]}")
     body = {
         "contents": [{"parts": [{"text": PROMPT.format(categories=", ".join(CATEGORIES), items="\n".join(lines))}]}],
-        "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "responseSchema": SCHEMA},
+        "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "responseSchema": SCHEMA,
+                             "maxOutputTokens": 32768},
     }
     last = None
     for attempt in range(retries):
         try:
             resp = requests.post(GEMINI_URL.format(model=model), json=body, timeout=180,
                                  headers={"x-goog-api-key": api_key})
+            if resp.status_code == 429 and "PerDay" in resp.text:
+                # Daily quota gone: retrying only burns time, move on to the next model.
+                raise _DailyQuota(f"{model}: daily quota used up")
             if resp.status_code in (429, 500, 503):
+                # Per-minute limit (5 RPM on the free tier) or a temporary overload.
                 last = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                time.sleep(20 * (attempt + 1))
+                time.sleep(65)
                 continue
             resp.raise_for_status()
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
