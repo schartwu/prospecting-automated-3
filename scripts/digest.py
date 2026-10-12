@@ -35,9 +35,13 @@ def fmt_money(v):
     return f"{float(v):,.0f}" if v not in (None, "") and pd.notna(v) else "-"
 
 
+EMAIL_ROW_LIMIT = 30  # per section; the attached Excel always has every row
+
+
 def section_html(heading, hint, rows):
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
+    shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
     if not rows:
         out.append('<div style="color:#999;font-size:13px">ไม่มีรายการใหม่</div>')
         return "\n".join(out)
