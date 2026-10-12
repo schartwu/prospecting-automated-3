@@ -6,7 +6,9 @@ import time
 import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# Tried in order when the main model is overloaded (HTTP 503) or rate limited.
+FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash"]
 
 CATEGORIES = [
     "กระดาษและเครื่องเขียน",
@@ -60,8 +62,19 @@ SCHEMA = {
 }
 
 
-def classify_titles(rows: list[dict], api_key: str, model: str = DEFAULT_MODEL, retries: int = 3) -> list[dict]:
-    """rows: [{'title', 'announce_types', 'methods'}]. Returns one verdict dict per row, same order."""
+def classify_titles(rows: list[dict], api_key: str, model: str = DEFAULT_MODEL) -> list[dict]:
+    """rows: [{'title', 'announce_types', 'methods'}]. Returns one verdict dict per row, same order.
+    Falls back to other models when one is overloaded."""
+    errors = []
+    for m in [model, *[f for f in FALLBACK_MODELS if f != model]]:
+        try:
+            return _classify_with(rows, api_key, m)
+        except RuntimeError as e:
+            errors.append(str(e))
+    raise RuntimeError(" | ".join(errors))
+
+
+def _classify_with(rows: list[dict], api_key: str, model: str, retries: int = 3) -> list[dict]:
     lines = []
     for i, r in enumerate(rows):
         hint = ", ".join(filter(None, [*(r.get("announce_types") or []), *(r.get("methods") or [])]))
@@ -96,7 +109,7 @@ def classify_titles(rows: list[dict], api_key: str, model: str = DEFAULT_MODEL, 
         except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError) as e:
             last = f"{type(e).__name__}: {e}"
             time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"Gemini failed after {retries} attempts: {last}")
+    raise RuntimeError(f"{model} failed after {retries} attempts: {last[:300]}")
 
 
 def list_models(api_key: str) -> list[str]:
