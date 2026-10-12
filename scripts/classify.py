@@ -1,4 +1,8 @@
-"""Classify every not-yet-classified announcement title with Gemini and store the verdicts in Supabase.
+"""Classify every not-yet-classified announcement title and store the verdicts in Supabase.
+
+Clear-cut titles are decided by keyword rules (egp/rules.py); only the ambiguous rest goes to Gemini,
+which keeps us inside the free-tier quota. When Gemini is out of quota or overloaded, the rule verdicts
+are still saved and the ambiguous titles simply wait for the next run, so the job does not fail.
 
 Only announcement types that lead to a sale or tell us who buys what are classified. Cancellations and
 changes (D1, W1, D2, W2) are looked up by project number when the digest is built.
@@ -8,6 +12,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from egp import rules  # noqa: E402
 from egp.classify import DEFAULT_MODEL, QuotaExhausted, classify_titles, list_models  # noqa: E402
 from egp.db import DB  # noqa: E402
 
@@ -17,34 +22,50 @@ TYPES = ["P0", "15", "B0", "D0", "W0"]
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch", type=int, default=100, help="titles per Gemini request")
-    ap.add_argument("--max-titles", type=int, default=5000)
+    ap.add_argument("--max-titles", type=int, default=10000)
     ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--no-ai", action="store_true", help="rules only")
     ap.add_argument("--list-models", action="store_true")
     args = ap.parse_args()
 
-    key = os.environ["GEMINI_API_KEY"]
+    key = os.environ.get("GEMINI_API_KEY", "")
     if args.list_models:
         print("\n".join(list_models(key)))
         return
 
     db = DB()
-    done_titles = saved = relevant = 0
-    seen = set()
-    while done_titles < args.max_titles:
-        rows = db.rpc("unclassified_titles", {"p_types": TYPES, "p_limit": args.batch})
-        if not rows or all(r["title"] in seen for r in rows):
-            break  # nothing left, or the same titles came back unsaved: stop instead of looping
-        seen.update(r["title"] for r in rows)
-        try:
-            verdicts = classify_titles(rows, key, args.model)
-        except QuotaExhausted as e:
-            print(f"Gemini daily quota used up for every model; the rest continues on the next run. ({e})")
-            break
-        saved += db.rpc("save_title_classifications", {"p_types": TYPES, "p_rows": verdicts})
-        done_titles += len(rows)
-        relevant += sum(v["relevant"] for v in verdicts)
-        print(f"  {done_titles} titles classified ({relevant} relevant), {saved} announcements saved", flush=True)
-    print(f"DONE model={args.model} titles={done_titles} relevant={relevant} announcements={saved}")
+    # One fetch, most urgent types first (see unclassified_titles). Fetching everything at once keeps
+    # rule-decidable titles from getting stuck behind ambiguous ones when Gemini is unavailable.
+    rows = db.rpc("unclassified_titles", {"p_types": TYPES, "p_limit": args.max_titles})
+
+    by_rule, for_ai = [], []
+    for r in rows:
+        verdict = rules.decide(r["title"])
+        (by_rule.append({"title": r["title"], **verdict}) if verdict else for_ai.append(r))
+    saved = 0
+    for i in range(0, len(by_rule), 500):
+        saved += db.rpc("save_title_classifications", {"p_types": TYPES, "p_rows": by_rule[i:i + 500]})
+    print(f"rules: {len(by_rule)} of {len(rows)} titles decided "
+          f"({sum(v['relevant'] for v in by_rule)} relevant), {saved} announcements saved", flush=True)
+
+    ai_done = ai_relevant = 0
+    if not args.no_ai:
+        for i in range(0, len(for_ai), args.batch):
+            chunk = for_ai[i:i + args.batch]
+            try:
+                verdicts = classify_titles(chunk, key, args.model)
+            except (QuotaExhausted, RuntimeError) as e:
+                # A ::warning:: shows in the run summary without failing the job (no failure email).
+                print(f"::warning::Gemini unavailable, {len(for_ai) - ai_done} titles wait for the next run: "
+                      f"{str(e)[:300]}", flush=True)
+                break
+            db.rpc("save_title_classifications", {"p_types": TYPES, "p_rows": verdicts})
+            ai_done += len(chunk)
+            ai_relevant += sum(v["relevant"] for v in verdicts)
+            print(f"  gemini: {ai_done}/{len(for_ai)} titles ({ai_relevant} relevant)", flush=True)
+
+    print(f"DONE titles={len(rows)} rules={len(by_rule)} gemini={ai_done} "
+          f"waiting={len(for_ai) - ai_done}")
 
 
 if __name__ == "__main__":
