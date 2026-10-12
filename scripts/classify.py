@@ -16,7 +16,7 @@ TYPES = ["P0", "15", "B0", "D0", "W0"]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", type=int, default=200, help="titles per Gemini request")
+    ap.add_argument("--batch", type=int, default=100, help="titles per Gemini request")
     ap.add_argument("--max-titles", type=int, default=5000)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--list-models", action="store_true")
