@@ -18,13 +18,17 @@ MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนา�
           "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
 MONEY = r"(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})\s*บาท"
 MAX_DOWNLOAD = 15 * 1024 * 1024
+# The e-GP document server's firewall answers a bare "Mozilla/5.0" with a 244-byte "Request Rejected"
+# page; a complete browser User-Agent gets the document.
+USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/141.0 Safari/537.36")
 # Inside a ZIP, the short announcement documents carry the numbers; the TOR is long and comes last.
 ZIP_ORDER = [r"^annoudoc", r"^pB0", r"^doc_", r"\.pdf$"]
 
 
 def fetch_text(url: str) -> tuple[str, dict]:
     """Download the linked document and return (plain text, info about what was read)."""
-    resp = requests.get(url, timeout=90, headers={"User-Agent": "Mozilla/5.0"}, stream=True)
+    resp = requests.get(url, timeout=90, headers={"User-Agent": USER_AGENT}, stream=True)
     resp.raise_for_status()
     data = resp.raw.read(MAX_DOWNLOAD + 1, decode_content=True)
     if len(data) > MAX_DOWNLOAD:
@@ -39,6 +43,8 @@ def fetch_text(url: str) -> tuple[str, dict]:
         ordered = sorted(names, key=lambda n: next(i for i, p in enumerate(ZIP_ORDER) if re.search(p, n, re.I)))
         texts = [_pdf_text(zf.read(n)) for n in ordered if "tor" not in n.lower()][:3]
         return "\n".join(texts), info
+    if b"Request Rejected" in data[:500]:
+        raise RuntimeError("e-GP firewall rejected the request")
     return "", {**info, "kind": "other"}  # e.g. an HTML login page
 
 
