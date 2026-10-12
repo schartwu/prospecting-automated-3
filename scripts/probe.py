@@ -1,42 +1,18 @@
-"""Send a few single RSS requests one at a time and print exactly what happens (timing, status, size, error)."""
-import time
-
+"""Send a few single requests one at a time and print exactly what comes back."""
 import requests
 
-BASE = "http://process3.gprocurement.go.th/EPROCRssFeedWeb/egpannouncerss.xml"
-CASES = [
-    "methodId=16&anounceType=D0&deptId=0307",  # exactly what v2 sends
-    "anounceType=D0&deptId=0307",
-    "deptId=0307",
-    "methodId=15&anounceType=D0&deptId=0307",
-    "methodId=16&anounceType=P0&deptId=0307",
-    "methodId=16&anounceType=15&deptId=0307",
-    "methodId=16&anounceType=B0&deptId=0307",
-    "methodId=16&anounceType=W0&deptId=0307",
-    "methodId=16&anounceType=D0&deptId=2101",
-    "anounceType=P0&deptId=2101",
-    "methodId=16&anounceType=D0",
-    "methodId=16&anounceType=D0&deptsubId=0300700101",
+URLS = [
+    "https://process5.gprocurement.go.th/egp-template-service/dwnt/view-pdf-file?templateId=fdfd4581-1679-47df-a9bc-6b8f30e46700",
+    "https://process5.gprocurement.go.th/egp-upload-service/v1/downloadFileTest?fileId=8850cf5fc54f4fe3b26d8f943647ce9f",
 ]
-
-for q in CASES:
-    url = f"{BASE}?{q}"
-    t0 = time.monotonic()
-    try:
-        # stream + wall-clock cap, because a slow server can trickle bytes past a normal read timeout
-        with requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=(10, 30), stream=True) as r:
-            body = b""
-            for chunk in r.iter_content(8192):
-                body += chunk
-                if time.monotonic() - t0 > 90:
-                    raise TimeoutError("wall clock > 90s")
-            txt = body.decode("cp874", errors="replace")
-            print(f"[{time.monotonic()-t0:5.1f}s] HTTP {r.status_code} {len(body):>7}B items={txt.count('<item>')} | {q}", flush=True)
-            if "<item>" in txt:
-                i = txt.index("<item>")
-                print("        ", txt[i:i+600].replace("\n", " "), flush=True)
-            elif body:
-                print("        ", txt[:300].replace("\n", " "), flush=True)
-    except Exception as e:
-        print(f"[{time.monotonic()-t0:5.1f}s] FAIL {type(e).__name__}: {str(e)[:200]} | {q}", flush=True)
-    time.sleep(2)
+for u in URLS:
+    for ua in ("Mozilla/5.0", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36"):
+        r = requests.get(u, headers={"User-Agent": ua}, timeout=60, allow_redirects=True)
+        print(r.status_code, r.headers.get("Content-Type"), len(r.content), "| server:", r.headers.get("Server"),
+              "| history:", [h.status_code for h in r.history], "| final:", r.url[:90])
+        if len(r.content) < 2000:
+            print("   body:", r.content[:600])
+try:
+    print("my ip:", requests.get("https://ipinfo.io/json", timeout=20).text[:300])
+except Exception as e:
+    print("ip lookup failed", e)
