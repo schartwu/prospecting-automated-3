@@ -1,6 +1,7 @@
 """Minimal Supabase (PostgREST) client for the collector. Uses the service role key, which bypasses RLS,
 so it must only run in GitHub Actions with the key from repository secrets."""
 import os
+import time
 
 import requests
 
@@ -35,5 +36,12 @@ class DB:
         return self._check(self.s.patch(f"{self.base}/{table}", params=filters, json=values,
                                         headers={"Prefer": "return=minimal"}, timeout=60))
 
-    def rpc(self, fn: str, args: dict):
-        return self._check(self.s.post(f"{self.base}/rpc/{fn}", json=args, timeout=300))
+    def rpc(self, fn: str, args: dict, retries: int = 3):
+        """Our RPCs are idempotent (upserts / reads), so a timed-out call is safe to repeat."""
+        for attempt in range(retries + 1):
+            try:
+                return self._check(self.s.post(f"{self.base}/rpc/{fn}", json=args, timeout=90))
+            except (requests.ConnectionError, requests.Timeout):
+                if attempt == retries:
+                    raise
+                time.sleep(10 * (attempt + 1))
