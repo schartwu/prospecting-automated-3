@@ -37,6 +37,13 @@ jobs:
       - name: Collect
         run: python scripts/discover.py --mode "${{ inputs.mode || 'types' }}" --max-minutes 100
 
+      - name: Load into Supabase
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/load_runs.py
+
       - name: Keep raw data as a run artifact
         if: always()
         uses: actions/upload-artifact@v4
