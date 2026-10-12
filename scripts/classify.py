@@ -13,7 +13,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp import rules  # noqa: E402
-from egp.classify import QuotaExhausted, classify_titles, list_models  # noqa: E402
+from egp.classify import classify_titles  # noqa: E402
+from egp.gemini import Gemini, QuotaExhausted, list_models  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 TYPES = ["P0", "15", "B0", "D0", "W0"]
@@ -34,8 +35,7 @@ def main():
 
     db = DB()
 
-    def take(model, budget):
-        return db.rpc("ai_take", {"p_model": model, "p_budget": budget})
+    gemini = Gemini(key, lambda model, budget: db.rpc("ai_take", {"p_model": model, "p_budget": budget}))
 
     # One fetch, most urgent types first (see unclassified_titles). Fetching everything at once keeps
     # rule-decidable titles from getting stuck behind ambiguous ones when Gemini is unavailable.
@@ -57,7 +57,7 @@ def main():
         for i in range(0, len(for_ai), args.batch):
             chunk = for_ai[i:i + args.batch]
             try:
-                verdicts = classify_titles(chunk, key, take)
+                verdicts = classify_titles(chunk, gemini)
             except (QuotaExhausted, RuntimeError) as e:
                 # A ::warning:: shows in the run summary without failing the job (no failure email).
                 print(f"::warning::Gemini unavailable, {len(for_ai) - ai_done} titles wait for the next run: "

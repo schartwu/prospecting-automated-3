@@ -6,7 +6,7 @@ neither are left for Gemini.
 """
 import re
 
-MODEL = "rules-v1"
+MODEL = "rules-v2"
 
 NOT_OURS = re.compile(
     "จ้างก่อสร้าง|ก่อสร้าง|จ้างเหมา|บำรุงรักษา|ซ่อม|ที่ปรึกษา|การแพทย์|วิทยาศาสตร์|ยานพาหนะ|รถยนต์|รถบรรทุก|"
@@ -30,12 +30,24 @@ CATEGORY_BY_WORD = [
 ]
 
 
+# Scores follow the bands in egp/classify.py (SCORE_RUBRIC): core consumables 90-100, other office goods 75-89.
+SCORE_BY_CATEGORY = {
+    "หมึกพิมพ์และวัสดุสิ้นเปลืองงานพิมพ์": 95,
+    "กระดาษและเครื่องเขียน": 95,
+    "วัสดุสำนักงานรวมหลายหมวด": 95,
+    "คอมพิวเตอร์และอุปกรณ์ไอที": 85,
+    "เฟอร์นิเจอร์สำนักงาน": 85,
+    "เครื่องใช้สำนักงาน": 85,
+    "วัสดุงานบ้านงานครัวและทำความสะอาด": 80,
+}
+
+
 def decide(title: str) -> dict | None:
     """Return a verdict like the Gemini classifier's, or None when the title needs Gemini."""
     ours, not_ours = OURS.search(title), NOT_OURS.search(title)
     if ours and not not_ours:
         category = next((c for words, c in CATEGORY_BY_WORD if re.search(words, title)), None)
-        return {"relevant": True, "score": 90, "category": category,
+        return {"relevant": True, "score": SCORE_BY_CATEGORY.get(category, 80), "category": category,
                 "reason": f"คำว่า '{ours.group(0)}' ตรงสินค้า OfficeMate", "model": MODEL}
     if not_ours and not ours:
         return {"relevant": False, "score": 0, "category": "ไม่เกี่ยวข้อง",

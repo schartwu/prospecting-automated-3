@@ -28,17 +28,60 @@ SECTIONS = [
     (["P0"], "📅 แผนจัดซื้อใหม่ (สรุปรายสัปดาห์)", "โอกาสล่วงหน้า วางแผนเข้าพบหน่วยงาน", True),
     (["W0"], "📊 ผลผู้ชนะในหมวดของเรา (สรุปรายสัปดาห์)", "ดูว่าใครชนะ และหน่วยงานไหนซื้อของสำนักงานบ่อย", True),
 ]
-TYPE_LABEL = {"P0": "แผน", "15": "ราคากลาง", "B0": "ร่าง TOR", "D0": "เชิญชวน", "W0": "ผู้ชนะ", "D1": "ยกเลิก"}
+TYPE_LABEL = {
+    "P0": "แผนจัดซื้อ",
+    "15": "ราคากลาง",
+    "B0": "ร่าง TOR",
+    "D0": "ประกาศเชิญชวน",
+    "W0": "ประกาศผู้ชนะ",
+    "D1": "ยกเลิกประกาศเชิญชวน",
+    "W1": "ยกเลิกประกาศผู้ชนะ",
+    "D2": "แก้ไขประกาศเชิญชวน",
+    "W2": "แก้ไขประกาศผู้ชนะ",
+}
+TYPE_MEANING = {
+    "P0": "แผนจัดซื้อจัดจ้างประจำปี — รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน",
+    "15": "ประกาศราคากลาง — บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน",
+    "B0": "ร่าง TOR / ร่างเอกสารประกวดราคา — ประกาศเชิญชวนจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
+    "D0": "ประกาศเชิญชวน — เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง",
+    "W0": "ประกาศผู้ชนะ — ใครชนะ ใช้ดูคู่แข่งและหน่วยงานที่ซื้อของสำนักงานบ่อย",
+    "D1": "ยกเลิกประกาศเชิญชวน",
+    "W1": "ยกเลิกประกาศผู้ชนะ",
+    "D2": "แก้ไข/เปลี่ยนแปลงประกาศเชิญชวน",
+    "W2": "แก้ไข/เปลี่ยนแปลงประกาศผู้ชนะ",
+}
+SCORE_BANDS = [
+    ("90-100", "สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน"),
+    ("75-89", "ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน"),
+    ("60-74", "โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ"),
+    ("40-59", "ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย"),
+    ("0-39", "ไม่ใช่สินค้าที่ OfficeMate ขาย (ไม่แสดงในอีเมล)"),
+]
 
 
 def fmt_money(v):
     return f"{float(v):,.0f}" if v not in (None, "") and pd.notna(v) else "-"
 
 
+def days_left(r, today):
+    return (datetime.fromisoformat(r["bid_date"]).date() - today).days if r.get("bid_date") else None
+
+
+def bid_cell(r, today):
+    if not r.get("bid_date"):
+        return "-"
+    left = days_left(r, today)
+    when = datetime.fromisoformat(r["bid_date"]).strftime("%d/%m")
+    time_ = f" {r['bid_time']}" if r.get("bid_time") else ""
+    color = "#c00" if left <= 3 else "#333"
+    note = "ผ่านไปแล้ว" if left < 0 else ("วันนี้" if left == 0 else f"อีก {left} วัน")
+    return f"{when}{time_}<div style='color:{color};font-size:12px'><b>{note}</b></div>"
+
+
 EMAIL_ROW_LIMIT = 30  # per section; the attached Excel always has every row
 
 
-def section_html(heading, hint, rows):
+def section_html(heading, hint, rows, today):
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
     shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
@@ -47,25 +90,34 @@ def section_html(heading, hint, rows):
         return "\n".join(out)
     out.append('<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
                '<tr style="background:#f2f2f2;text-align:left"><th>คะแนน</th><th>โครงการ</th><th>หน่วยงาน</th>'
-               '<th>หมวด</th><th>งบ (บาท)</th><th>ประกาศ</th></tr>')
+               '<th>งบ (บาท)</th><th>วันยื่นซอง</th><th>วันที่ประกาศ</th></tr>')
     for r in rows:
-        flags = " ".join(TYPE_LABEL.get(s, s) for s in (r.get("stages") or []) if s != r["announce_type"])
-        cancelled = ' <b style="color:#c00">[ยกเลิกแล้ว]</b>' if r.get("cancelled") else ""
+        flags = ", ".join(TYPE_LABEL.get(s, s) for s in (r.get("stages") or []) if s != r["announce_type"])
+        badges = ""
+        if r.get("cancelled"):
+            badges += ' <b style="color:#c00">[ยกเลิกแล้ว]</b>'
+        if r.get("amended"):
+            badges += ' <b style="color:#d97706">[มีการแก้ไขประกาศ]</b>'
+        sub = " · ".join(filter(None, [r.get("category"), r.get("reason"),
+                                       f"มีประกาศ: {flags}" if flags else None]))
         out.append(
             "<tr style='border-top:1px solid #eee;vertical-align:top'>"
             f"<td><b>{r['score']}</b></td>"
-            f"<td><a href=\"{html.escape(r['link'])}\">{html.escape(r['title'][:220])}</a>{cancelled}"
-            f"<div style='color:#888;font-size:12px'>{html.escape(r.get('reason') or '')}"
-            f"{' · มีประกาศ: ' + html.escape(flags) if flags else ''}</div></td>"
+            f"<td><a href=\"{html.escape(r['link'])}\">{html.escape(r['title'][:220])}</a>{badges}"
+            f"<div style='color:#888;font-size:12px'>{html.escape(sub)}</div></td>"
             f"<td>{html.escape(r.get('dept_name') or '')}</td>"
-            f"<td>{html.escape(r.get('category') or '')}</td>"
             f"<td style='text-align:right'>{fmt_money(r.get('budget_thb'))}</td>"
+            f"<td>{bid_cell(r, today)}</td>"
             f"<td>{r.get('pub_date') or ''}</td></tr>")
     out.append("</table>")
+    if len(shown) > len(rows):
+        out.append(f'<div style="color:#666;font-size:12px">แสดง {len(rows)} อันดับแรก '
+                   f'จาก {len(shown)} รายการ · ดูทั้งหมดในไฟล์ Excel แนบ</div>')
     return "\n".join(out)
 
 
 def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
+    today = now.date()
     parts, all_rows = [], []
     for types, heading, hint, weekly_only in SECTIONS:
         if weekly_only and not weekly:
@@ -77,26 +129,52 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
         if types == ["15"]:
             # Reference prices for projects that also got a D0 are already shown under D0.
             rows = [r for r in rows if "D0" not in (r.get("stages") or [])]
-        parts.append(section_html(heading, hint, rows))
-        all_rows += [{**r, "section": heading} for r in rows]
+        if types == ["D0"]:
+            # Bids closing soonest first; unknown or past deadlines after them.
+            def urgency(r):
+                left = days_left(r, today)
+                return (left is None or left < 0, left if left is not None else 999, -r["score"])
+            rows.sort(key=urgency)
+        parts.append(section_html(heading, hint, rows, today))
+        all_rows += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows]
 
     total = len(all_rows)
-    head = (f'<div style="font-family:Tahoma,sans-serif;max-width:960px">'
+    head = (f'<div style="font-family:Tahoma,sans-serif;max-width:980px">'
             f'<h2 style="margin:0">e-GP Alert — {now:%d/%m/%Y}</h2>'
             f'<div style="color:#666">ประกาศใหม่ที่เกี่ยวกับ OfficeMate ตั้งแต่ {since.astimezone(BKK):%d/%m %H:%M} น. '
-            f'รวม {total} รายการ (คัดกรองโดย AI คะแนน ≥ {min_score})</div>')
-    foot = ('<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความมั่นใจว่า OfficeMate ขายได้ (0-100) · '
-            'ไฟล์ Excel แนบมีรายการทั้งหมด · ระบบ e-GP Alert v3</p></div>')
+            f'รวม {total} รายการ (คะแนน ≥ {min_score})</div>')
+    bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
+    foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
+            f'{html.escape(bands)}<br>งบ = ราคากลางจากเอกสารประกาศ · ไฟล์ Excel แนบมีรายการทั้งหมดและแท็บคำอธิบาย '
+            '· ระบบ e-GP Alert v3</p></div>')
     return head + "\n".join(parts) + foot, all_rows
 
 
 def write_xlsx(rows, path):
-    cols = {"section": "หมวดอีเมล", "score": "คะแนน", "announce_type": "ประเภท", "title": "ชื่อโครงการ",
-            "dept_name": "หน่วยงาน", "category": "หมวดสินค้า", "reason": "เหตุผล AI", "budget_thb": "งบประมาณ",
-            "bid_date": "วันยื่นซอง", "pub_date": "วันที่ประกาศ", "method": "วิธีจัดหา",
-            "project_no": "เลขโครงการ", "plan_no": "เลขแผน", "cancelled": "ยกเลิกแล้ว", "link": "ลิงก์"}
-    df = pd.DataFrame(rows, columns=list(cols)).rename(columns=cols)
-    df.to_excel(path, index=False)
+    cols = {"section": "หมวดอีเมล", "score": "คะแนน", "type_label": "ประเภทประกาศ", "title": "ชื่อโครงการ",
+            "dept_name": "หน่วยงาน", "category": "หมวดสินค้า", "reason": "เหตุผล", "budget_thb": "งบประมาณ (บาท)",
+            "bid_date": "วันยื่นซอง", "bid_time": "เวลายื่น", "days_left": "เหลือ (วัน)",
+            "pub_date": "วันที่ประกาศ", "method": "วิธีจัดหา", "project_no": "เลขโครงการ", "plan_no": "เลขแผน",
+            "cancelled": "ยกเลิกแล้ว", "amended": "มีการแก้ไขประกาศ", "link": "ลิงก์"}
+    data = [{**r, "type_label": f"{TYPE_LABEL.get(r['announce_type'], r['announce_type'])} ({r['announce_type']})"}
+            for r in rows]
+    df = pd.DataFrame(data, columns=list(cols)).rename(columns=cols)
+
+    columns_help = [
+        ("งบประมาณ (บาท)", "ราคากลางที่อ่านจากเอกสารประกาศ (ว่าง = เอกสารเปิดไม่ได้หรือไม่ระบุ)"),
+        ("วันยื่นซอง / เวลายื่น", "วันและช่วงเวลาเสนอราคาในระบบ e-GP (มีเฉพาะประกาศเชิญชวน)"),
+        ("เหลือ (วัน)", "จำนวนวันจากวันที่ส่งอีเมลถึงวันยื่นซอง"),
+        ("ยกเลิกแล้ว", "โครงการเดียวกันมีประกาศยกเลิกประกาศเชิญชวน (D1) ตามมา — ไม่ต้องตามต่อ"),
+        ("มีการแก้ไขประกาศ", "โครงการเดียวกันมีประกาศแก้ไขประกาศเชิญชวน (D2) — เปิดดูรายละเอียดใหม่"),
+        ("เลขโครงการ", "เลข 11 หลักของ e-GP ใช้ค้นหาโครงการในเว็บ e-GP"),
+    ]
+    legend = ([{"หัวข้อ": "ประเภทประกาศ", "ค่า": f"{TYPE_LABEL[k]} ({k})", "ความหมาย": v}
+               for k, v in TYPE_MEANING.items()]
+              + [{"หัวข้อ": "คะแนน", "ค่า": b, "ความหมาย": d} for b, d in SCORE_BANDS]
+              + [{"หัวข้อ": "คอลัมน์", "ค่า": k, "ความหมาย": v} for k, v in columns_help])
+    with pd.ExcelWriter(path) as xw:
+        df.to_excel(xw, sheet_name="รายการ", index=False)
+        pd.DataFrame(legend).to_excel(xw, sheet_name="คำอธิบาย", index=False)
 
 
 def send(subject, html_body, attachment, recipients):
