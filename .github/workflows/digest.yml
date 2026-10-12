@@ -1,0 +1,36 @@
+name: Morning digest
+
+# Triggered at 07:30 Bangkok by Supabase pg_cron (GitHub's own schedule can start hours late),
+# or by hand for previews and tests.
+on:
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "e.g. --since-days 3 --weekly yes   (add --send to email; --to a@b.com for a test)"
+        default: ""
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build digest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          ARGS: ${{ inputs.args }}
+        run: python scripts/digest.py $ARGS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ github.run_id }}
+          path: out/
+          retention-days: 14
