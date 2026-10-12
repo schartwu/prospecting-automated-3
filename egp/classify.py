@@ -6,14 +6,22 @@ import time
 import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-# Tried in order when a model's quota is used up or it is overloaded. On the free tier each model has
-# its own small daily request quota (20/day), so batches are large and the models share the load.
-FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-2.5-flash"]
+# Models in order of preference, each with a daily request budget kept just under its free-tier
+# quota (requests per day, reset at midnight Pacific) so we never hit the hard limit. Usage is counted
+# in Supabase (ai_usage / ai_take). Flash-Lite models have far larger quotas and catch the overflow.
+MODEL_BUDGETS = [
+    ("gemini-3.8-flash", 19),
+    ("gemini-3.6-flash", 19),
+    ("gemini-2.5-flash", 19),
+    ("gemini-3.1-flash-lite", 450),
+    ("gemini-2.5-flash-lite", 450),
+]
+SECONDS_BETWEEN_CALLS = 13  # free tier allows 5 requests per minute per model
 
 
 class QuotaExhausted(RuntimeError):
-    """Every model's daily quota is used up; the rest waits for tomorrow."""
+    """Every model's budget for today is used up; the rest waits for the next run."""
+
 
 CATEGORIES = [
     "กระดาษและเครื่องเขียน",
@@ -67,55 +75,64 @@ SCHEMA = {
 }
 
 
-def classify_titles(rows: list[dict], api_key: str, model: str = DEFAULT_MODEL) -> list[dict]:
+def classify_titles(rows: list[dict], api_key: str, take) -> list[dict]:
     """rows: [{'title', 'announce_types', 'methods'}]. Returns one verdict dict per row, same order.
-    Falls back to other models when one is overloaded."""
-    errors, exhausted = [], []
-    for m in [model, *[f for f in FALLBACK_MODELS if f != model]]:
-        if m in _exhausted_models:
+
+    take(model, budget) -> bool reserves one request against today's budget for that model (see
+    ai_take in Supabase). Every HTTP call is reserved first, retries included, because each one counts
+    against Google's quota."""
+    errors = []
+    for model, budget in MODEL_BUDGETS:
+        if model in _skip_models:
             continue
         try:
-            return _classify_with(rows, api_key, m)
-        except _DailyQuota as e:
-            _exhausted_models.add(m)
-            exhausted.append(m)
+            return _classify_with(rows, api_key, model, lambda: take(model, budget))
+        except _ModelUnavailable as e:
+            _skip_models.add(model)  # out of budget, quota, or not offered to this key: stop trying it
             errors.append(str(e))
         except RuntimeError as e:
             errors.append(str(e))
-    if all(m in _exhausted_models for m in [model, *FALLBACK_MODELS]):
+    if all(m in _skip_models for m, _ in MODEL_BUDGETS):
         raise QuotaExhausted(" | ".join(errors))
     raise RuntimeError(" | ".join(errors))
 
 
-class _DailyQuota(RuntimeError):
+class _ModelUnavailable(RuntimeError):
     pass
 
 
-_exhausted_models: set[str] = set()
+_skip_models: set[str] = set()
 
 
-def _classify_with(rows: list[dict], api_key: str, model: str, retries: int = 2) -> list[dict]:
+def _classify_with(rows: list[dict], api_key: str, model: str, reserve, retries: int = 2) -> list[dict]:
     lines = []
     for i, r in enumerate(rows):
         hint = ", ".join(filter(None, [*(r.get("announce_types") or []), *(r.get("methods") or [])]))
         lines.append(f"{i}. [{hint}] {r['title'][:400]}")
-    body = {
-        "contents": [{"parts": [{"text": PROMPT.format(categories=", ".join(CATEGORIES), items="\n".join(lines))}]}],
-        "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "responseSchema": SCHEMA,
-                             "maxOutputTokens": 32768},
-    }
+    config = {"temperature": 0, "responseMimeType": "application/json", "responseSchema": SCHEMA,
+              "maxOutputTokens": 32768}
+    if model.startswith("gemini-2.5"):
+        # 2.5 models think by default and those tokens count against the output limit, which can cut
+        # a long JSON answer short. Classifying titles does not need it.
+        config["thinkingConfig"] = {"thinkingBudget": 0}
+    prompt = PROMPT.format(categories=", ".join(CATEGORIES), items="\n".join(lines))
+    body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}
+
     last = None
     for attempt in range(retries):
+        if not reserve():
+            raise _ModelUnavailable(f"{model}: today's budget used up")
         try:
             resp = requests.post(GEMINI_URL.format(model=model), json=body, timeout=180,
                                  headers={"x-goog-api-key": api_key})
+            time.sleep(SECONDS_BETWEEN_CALLS)
             if resp.status_code == 429 and "PerDay" in resp.text:
-                # Daily quota gone: retrying only burns time, move on to the next model.
-                raise _DailyQuota(f"{model}: daily quota used up")
+                raise _ModelUnavailable(f"{model}: Google daily quota used up")
+            if resp.status_code == 404:
+                raise _ModelUnavailable(f"{model}: not available for this key")
             if resp.status_code in (429, 500, 503):
-                # Per-minute limit (5 RPM on the free tier) or a temporary overload.
                 last = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                time.sleep(65)
+                time.sleep(30)
                 continue
             resp.raise_for_status()
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -133,8 +150,7 @@ def _classify_with(rows: list[dict], api_key: str, model: str, retries: int = 2)
             } for i in range(len(rows))]
         except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError) as e:
             last = f"{type(e).__name__}: {e}"
-            time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"{model} failed after {retries} attempts: {last[:300]}")
+    raise RuntimeError(f"{model} failed after {retries} attempts: {(last or '')[:300]}")
 
 
 def list_models(api_key: str) -> list[str]:

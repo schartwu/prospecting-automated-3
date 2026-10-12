@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp import rules  # noqa: E402
-from egp.classify import DEFAULT_MODEL, QuotaExhausted, classify_titles, list_models  # noqa: E402
+from egp.classify import QuotaExhausted, classify_titles, list_models  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 TYPES = ["P0", "15", "B0", "D0", "W0"]
@@ -23,7 +23,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch", type=int, default=100, help="titles per Gemini request")
     ap.add_argument("--max-titles", type=int, default=10000)
-    ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--no-ai", action="store_true", help="rules only")
     ap.add_argument("--list-models", action="store_true")
     args = ap.parse_args()
@@ -34,9 +33,14 @@ def main():
         return
 
     db = DB()
+
+    def take(model, budget):
+        return db.rpc("ai_take", {"p_model": model, "p_budget": budget})
+
     # One fetch, most urgent types first (see unclassified_titles). Fetching everything at once keeps
     # rule-decidable titles from getting stuck behind ambiguous ones when Gemini is unavailable.
     rows = db.rpc("unclassified_titles", {"p_types": TYPES, "p_limit": args.max_titles})
+    # PostgREST caps a response at 1000 rows; anything beyond is picked up by the next run.
 
     by_rule, for_ai = [], []
     for r in rows:
@@ -53,7 +57,7 @@ def main():
         for i in range(0, len(for_ai), args.batch):
             chunk = for_ai[i:i + args.batch]
             try:
-                verdicts = classify_titles(chunk, key, args.model)
+                verdicts = classify_titles(chunk, key, take)
             except (QuotaExhausted, RuntimeError) as e:
                 # A ::warning:: shows in the run summary without failing the job (no failure email).
                 print(f"::warning::Gemini unavailable, {len(for_ai) - ai_done} titles wait for the next run: "
