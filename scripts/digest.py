@@ -267,8 +267,14 @@ def main():
         to = args.to or os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"]
         recipients = [e.strip() for e in to.split(",") if e.strip()]
         n_new = len(rows)
-        subject = (f"🚨 e-GP Alert {now:%d/%m/%Y}: {n_new} โครงการใหม่ที่เกี่ยวกับ OfficeMate" if n_new
-                   else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่")
+        weekly_headings = {h for _, h, _, weekly_only in SECTIONS if weekly_only}
+        n_daily = sum(r["section"] not in weekly_headings for r in rows)
+        n_bid = sum(r["announce_type"] == "D0" for r in rows)
+        n_prep = sum(r["announce_type"] == "B0" for r in rows)
+        weekly_note = f" + สรุปรายสัปดาห์ {n_new - n_daily} รายการ" if n_new > n_daily else ""
+        subject = (f"🚨 e-GP Alert {now:%d/%m/%Y}: ยื่นราคาได้ {n_bid} · เตรียมของ {n_prep} · "
+                   f"ใหม่รวม {n_daily} โครงการ{weekly_note}" if n_daily
+                   else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่{weekly_note}")
         send(subject, body, xlsx, recipients)
         if not args.to:  # test sends don't move the "since" window for the real digest
             db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": n_new,
