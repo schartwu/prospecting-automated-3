@@ -175,6 +175,45 @@ def write_xlsx(rows, path):
     with pd.ExcelWriter(path) as xw:
         df.to_excel(xw, sheet_name="รายการ", index=False)
         pd.DataFrame(legend).to_excel(xw, sheet_name="คำอธิบาย", index=False)
+        style_sheet(xw.sheets["รายการ"], number_cols={"งบประมาณ (บาท)"},
+                    wrap_cols={"ชื่อโครงการ": 60, "เหตุผล": 35, "หน่วยงาน": 28})
+        style_sheet(xw.sheets["คำอธิบาย"], wrap_cols={"ความหมาย": 80})
+
+
+# Column widths in Excel character units. Long text columns (wrap_cols: name -> width) get a fixed
+# width and wrap instead of stretching the sheet; the rest are sized to their content within bounds.
+MIN_WIDTH, MAX_WIDTH = 8, 45
+
+
+def style_sheet(ws, number_cols=frozenset(), wrap_cols=None):
+    wrap_cols = wrap_cols or {}
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    header = {cell.value: cell.column for cell in ws[1]}
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="F2F2F2")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    for name, col in header.items():
+        letter = get_column_letter(col)
+        cells = [c for (c,) in ws.iter_rows(min_row=2, min_col=col, max_col=col)]
+        if name in number_cols:
+            for c in cells:
+                c.number_format = "#,##0"  # 4,992,128 — no decimals
+        if name in wrap_cols:
+            width = wrap_cols[name]
+            for c in cells:
+                c.alignment = Alignment(wrap_text=True, vertical="top")
+        else:
+            longest = max([len(str(name))] + [len(f"{c.value:,.0f}") if name in number_cols and isinstance(
+                c.value, (int, float)) else len(str(c.value)) for c in cells if c.value is not None])
+            width = min(MAX_WIDTH, max(MIN_WIDTH, longest + 2))
+            for c in cells:
+                c.alignment = Alignment(vertical="top")
+        ws.column_dimensions[letter].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
 
 
 def send(subject, html_body, attachment, recipients):
@@ -223,7 +262,9 @@ def main():
     print(f"digest since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items -> {out}")
 
     if args.send:
-        recipients = [e.strip() for e in (args.to or os.environ["RECEIVER_EMAIL"]).split(",") if e.strip()]
+        # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
+        to = args.to or os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"]
+        recipients = [e.strip() for e in to.split(",") if e.strip()]
         n_new = len(rows)
         subject = (f"🚨 e-GP Alert {now:%d/%m/%Y}: {n_new} โครงการใหม่ที่เกี่ยวกับ OfficeMate" if n_new
                    else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่")

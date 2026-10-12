@@ -27,6 +27,7 @@ jobs:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          DIGEST_RECIPIENTS: ${{ vars.DIGEST_RECIPIENTS }}
           ARGS: ${{ inputs.args }}
         run: python scripts/digest.py $ARGS
       - uses: actions/upload-artifact@v4

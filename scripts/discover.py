@@ -33,6 +33,9 @@ def load_departments():
 # known 4-digit depts and nationwide before 10-digit sub-units, and unknown-format codes last;
 # within a group, early-warning types (P0, 15, B0) before the rest.
 TYPE_ORDER = ["P0", "15", "B0", "D0", "W0", "D2", "D1", "W2", "W1"]
+# Production collection: the types the digest uses (W1/W2 are never shown), for the codes that
+# returned data in Phase 0 (nationwide + 4-digit deptId).
+DAILY_TYPES = ["P0", "15", "B0", "D0", "W0", "D1", "D2"]
 
 
 def build_requests(mode):
@@ -57,6 +60,13 @@ def build_requests(mode):
                 # Codes of unknown format from the v2 list: try both parameters once.
                 for p in ("deptId", "deptsubId"):
                     add(2, {p: d["code"], "anounceType": "D0"}, d["name"])
+    elif mode == "daily":
+        for t in DAILY_TYPES:
+            add(0, {"anounceType": t}, "(ไม่ระบุหน่วยงาน)")
+        for d in load_departments():
+            if d["param"] == "deptId":
+                for t in DAILY_TYPES:
+                    add(0, {"deptId": d["code"], "anounceType": t}, d["name"])
     elif mode == "sweep":
         for n in range(1, 10000):
             add(0, {"deptId": f"{n:04d}", "anounceType": "D0"}, "")
@@ -66,7 +76,7 @@ def build_requests(mode):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["types", "sweep"], default="types")
+    ap.add_argument("--mode", choices=["daily", "types", "sweep"], default="types")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--limit", type=int, default=0, help="only send the first N requests (testing)")
     ap.add_argument("--max-minutes", type=float, default=45,

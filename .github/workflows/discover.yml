@@ -1,10 +1,7 @@
 name: Phase 0 - Discovery
 
+# Phase 0 research collector, run by hand only. Production collection is daily.yml.
 on:
-  schedule:
-    # 15:30 Asia/Bangkok, Mon-Sat (GitHub may start it late). Once a day keeps us inside the
-    # free Actions minutes for private repos while a run takes ~100 min.
-    - cron: "30 8 * * 1-6"
   workflow_dispatch:
     inputs:
       mode:

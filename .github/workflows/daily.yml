@@ -1,0 +1,53 @@
+name: Daily pipeline
+
+# Evening run after the working day, so the day's announcements are complete (the digest is D-1).
+# GitHub often starts scheduled runs hours late; that is fine because the 07:30 email is triggered
+# separately by Supabase pg_cron and only needs this to finish overnight.
+on:
+  schedule:
+    - cron: "0 11 * * *"   # 18:00 Asia/Bangkok, every day (weekend announcements are rare but exist)
+  workflow_dispatch:
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: 1. Collect RSS (~2.5 h, polite to the e-GP server)
+        run: python scripts/discover.py --mode daily --workers 2 --max-minutes 170
+
+      # Each later step runs even if an earlier one had trouble, so partial data still flows through.
+      - name: 2. Load into Supabase
+        if: always()
+        run: python scripts/load_runs.py
+
+      - name: 3. Classify (rules first, Gemini within daily budgets)
+        if: always()
+        run: python scripts/classify.py
+
+      - name: 4. Read documents (budget, bid date)
+        if: always()
+        run: python scripts/enrich.py
+
+      - name: Keep raw data as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-${{ github.run_id }}
+          path: data/discovery/daily
+          retention-days: 30
