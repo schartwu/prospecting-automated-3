@@ -176,7 +176,8 @@ def write_xlsx(rows, path):
         df.to_excel(xw, sheet_name="รายการ", index=False)
         pd.DataFrame(legend).to_excel(xw, sheet_name="คำอธิบาย", index=False)
         style_sheet(xw.sheets["รายการ"], number_cols={"งบประมาณ (บาท)"},
-                    wrap_cols={"ชื่อโครงการ": 60, "เหตุผล": 35, "หน่วยงาน": 28})
+                    wrap_cols={"ชื่อโครงการ": 60, "เหตุผล": 35, "หน่วยงาน": 28,
+                               "หมวดอีเมล": 24, "หมวดสินค้า": 22, "วิธีจัดหา": 24})
         style_sheet(xw.sheets["คำอธิบาย"], wrap_cols={"ความหมาย": 80})
 
 
