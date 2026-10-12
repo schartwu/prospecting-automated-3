@@ -64,7 +64,8 @@ def load_folder(db: DB, folder: str):
         items = [parse_item(json.loads(line)) for line in f]
 
     # Same item can come back from several requests in one run; the upsert needs each key once per batch.
-    unique = list({(i["announce_type"], i["link"]): i for i in items if i["link"]}.values())
+    unique = list({(i["announce_type"], i["link"], i["plan_no"] or i["project_no"] or ""): i
+                   for i in items if i["link"]}.values())
 
     _, mode, day, hhmm = source.split("/")
     started = datetime.strptime(f"{day} {hhmm}", "%Y-%m-%d %H%M").replace(tzinfo=BKK)
