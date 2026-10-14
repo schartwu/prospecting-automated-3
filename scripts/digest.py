@@ -21,12 +21,18 @@ BKK = ZoneInfo("Asia/Bangkok")
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 SECTIONS = [
-    # (types, heading, what Sales/Merchandise should do, weekly_only)
-    (["D0"], "🔥 ประกาศเชิญชวน — ยื่นราคาได้แล้ว", "เปิดเอกสาร ตรวจคุณสมบัติ และเตรียมยื่นราคา", False),
-    (["B0"], "🛠 ร่าง TOR — เตรียมหาสินค้า (ประกาศจริงตามมาใน ~5 วัน)", "ให้ Merchandise ดู spec และเช็คสต็อก/ราคาทุน", False),
-    (["15"], "💰 ประกาศราคากลาง", "รู้งบประมาณของโครงการ", False),
-    (["P0"], "📅 แผนจัดซื้อใหม่ (สรุปรายสัปดาห์)", "โอกาสล่วงหน้า วางแผนเข้าพบหน่วยงาน", True),
-    (["W0"], "📊 ผลผู้ชนะในหมวดของเรา (สรุปรายสัปดาห์)", "ดูว่าใครชนะ และหน่วยงานไหนซื้อของสำนักงานบ่อย", True),
+    # (types, heading, what Sales/Merchandise should do, when, min score or None for the default)
+    # when: "daily" = every digest, "weekly" = Mondays only (last 7 days), "not_weekly" = Tue-Fri only.
+    (["D0"], "🔥 ประกาศเชิญชวน — ยื่นราคาได้แล้ว", "เปิดเอกสาร ตรวจคุณสมบัติ และเตรียมยื่นราคา", "daily", None),
+    (["B0"], "🛠 ร่าง TOR — เตรียมหาสินค้า (ประกาศจริงตามมาใน ~5 วัน)", "ให้ Merchandise ดู spec และเช็คสต็อก/ราคาทุน",
+     "daily", None),
+    (["15"], "💰 ประกาศราคากลาง", "รู้งบประมาณของโครงการ", "daily", None),
+    # Plans are the earliest signal for Merchandise, so the strongest ones go out daily; Monday has them all.
+    (["P0"], "📅 แผนจัดซื้อใหม่ (คะแนน 75 ขึ้นไป)", "รู้ล่วงหน้าหลายเดือน วางแผนสินค้าและเข้าพบหน่วยงาน",
+     "not_weekly", 75),
+    (["P0"], "📅 แผนจัดซื้อใหม่ (สรุปรายสัปดาห์)", "โอกาสล่วงหน้า วางแผนเข้าพบหน่วยงาน", "weekly", None),
+    (["W0"], "📊 ผลผู้ชนะในหมวดของเรา (สรุปรายสัปดาห์)", "ดูว่าใครชนะ และหน่วยงานไหนซื้อของสำนักงานบ่อย",
+     "weekly", None),
 ]
 TYPE_LABEL = {
     "P0": "แผนจัดซื้อ",
@@ -119,13 +125,13 @@ def section_html(heading, hint, rows, today):
 def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
     today = now.date()
     parts, all_rows = [], []
-    for types, heading, hint, weekly_only in SECTIONS:
-        if weekly_only and not weekly:
+    for types, heading, hint, when, sec_min in SECTIONS:
+        if (when == "weekly" and not weekly) or (when == "not_weekly" and weekly):
             continue
         # Weekly sections look back 7 days regardless of when the last daily digest went out.
-        sec_since = min(since, now - timedelta(days=7)) if weekly_only else since
+        sec_since = min(since, now - timedelta(days=7)) if when == "weekly" else since
         rows = db.rpc("digest_items", {"p_since": sec_since.isoformat(), "p_types": types,
-                                       "p_min_score": min_score})
+                                       "p_min_score": max(min_score, sec_min or 0)})
         if types == ["15"]:
             # Reference prices for projects that also got a D0 are already shown under D0.
             rows = [r for r in rows if "D0" not in (r.get("stages") or [])]
@@ -267,12 +273,14 @@ def main():
         to = args.to or os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"]
         recipients = [e.strip() for e in to.split(",") if e.strip()]
         n_new = len(rows)
-        weekly_headings = {h for _, h, _, weekly_only in SECTIONS if weekly_only}
+        weekly_headings = {h for _, h, _, when, _ in SECTIONS if when == "weekly"}
         n_daily = sum(r["section"] not in weekly_headings for r in rows)
         n_bid = sum(r["announce_type"] == "D0" for r in rows)
         n_prep = sum(r["announce_type"] == "B0" for r in rows)
+        n_plan = sum(r["announce_type"] == "P0" and r["section"] not in weekly_headings for r in rows)
         weekly_note = f" + สรุปรายสัปดาห์ {n_new - n_daily} รายการ" if n_new > n_daily else ""
         subject = (f"🚨 e-GP Alert {now:%d/%m/%Y}: ยื่นราคาได้ {n_bid} · เตรียมของ {n_prep} · "
+                   f"{f'แผนใหม่ {n_plan} · ' if n_plan else ''}"
                    f"ใหม่รวม {n_daily} โครงการ{weekly_note}" if n_daily
                    else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่{weekly_note}")
         send(subject, body, xlsx, recipients)

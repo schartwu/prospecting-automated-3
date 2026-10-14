@@ -1,11 +1,9 @@
 name: Daily pipeline
 
 # Evening run after the working day, so the day's announcements are complete (the digest is D-1).
-# GitHub often starts scheduled runs hours late; that is fine because the 07:30 email is triggered
-# separately by Supabase pg_cron and only needs this to finish overnight.
+# Started at 18:00 Bangkok every day by Supabase pg_cron ('egp-daily-pipeline'), because GitHub's own
+# schedule started it 7-9 h late. Can also be run by hand.
 on:
-  schedule:
-    - cron: "0 11 * * *"   # 18:00 Asia/Bangkok, every day (weekend announcements are rare but exist)
   workflow_dispatch:
 
 concurrency:
