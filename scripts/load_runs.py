@@ -1,9 +1,11 @@
-"""Load collected run folders (data/discovery/<mode>/<date>/<HHMM>) into Supabase.
+"""Load collected run folders (data/runs/<mode>/<date>/<HHMM>[-s<k>], written by collect.py)
+into Supabase.
 
 Idempotent: each folder becomes one collect_runs row keyed by its path, and folders already loaded
 are skipped. Announcements are upserted, so items repeated across runs are stored once.
+Also records which feeds hit the 20-item cap (for the afternoon re-read) and, for sweep runs,
+adds newly found departments.
 """
-import csv
 import glob
 import json
 import os
@@ -43,14 +45,6 @@ def parse_item(row: dict) -> dict:
     }
 
 
-def load_departments(db: DB):
-    with open(os.path.join(ROOT, "data", "departments_v2.csv"), encoding="utf-8-sig") as f:
-        rows = [{"code": r["code"], "param": r["param"], "name": r["name"], "source": "v2_list"}
-                for r in csv.DictReader(f) if r["param"] in ("deptId", "deptsubId")]
-    db.upsert("departments", rows, on_conflict="code")
-    print(f"departments: {len(rows)} upserted")
-
-
 def load_folder(db: DB, folder: str):
     source = os.path.relpath(folder, os.path.join(ROOT, "data")).replace(os.sep, "/")
     existing = db.select("collect_runs", source=f"eq.{source}", select="id,finished_at")
@@ -68,7 +62,7 @@ def load_folder(db: DB, folder: str):
                    for i in items if i["link"]}.values())
 
     _, mode, day, hhmm = source.split("/")
-    started = datetime.strptime(f"{day} {hhmm}", "%Y-%m-%d %H%M").replace(tzinfo=BKK)
+    started = datetime.strptime(f"{day} {hhmm[:4]}", "%Y-%m-%d %H%M").replace(tzinfo=BKK)
     stats = {
         "source": source, "mode": mode, "started_at": started.isoformat(),
         "n_requests": len(reqs), "n_ok": sum(r["ok"] for r in reqs),
@@ -85,11 +79,23 @@ def load_folder(db: DB, folder: str):
               id=f"eq.{run['id']}")
     print(f"loaded {source}: {len(unique)} unique items, {new} new")
 
+    capped = [{"dept_code": r["deptId"], "announce_type": r["anounceType"], "last_capped_at": started.isoformat()}
+              for r in reqs if r.get("capped") and r.get("deptId")]
+    if capped:
+        db.upsert("capped_feeds", capped, on_conflict="dept_code,announce_type")
+    if mode == "sweep":
+        found = [{"code": r["deptId"], "param": "deptId", "name": f"หน่วยงานรหัส {r['deptId']}",
+                  "source": "sweep"} for r in reqs if r["ok"] and r["n_items"] > 0]
+        if found:
+            # ignore-duplicates keeps names already known; new ones get a placeholder name until
+            # enrich.py reads the real name from an announcement document.
+            db.insert_ignore("departments", found, on_conflict="code")
+        print(f"sweep: {len(found)} departments with announcements")
+
 
 def main():
     db = DB()
-    load_departments(db)
-    folders = sorted(glob.glob(os.path.join(ROOT, "data", "discovery", "*", "*", "*")))
+    folders = sorted(glob.glob(os.path.join(ROOT, "data", "runs", "*", "*", "*")))
     for folder in folders:
         if os.path.exists(os.path.join(folder, "items.jsonl")):
             load_folder(db, folder)

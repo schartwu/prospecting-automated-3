@@ -85,6 +85,12 @@ def parse_bid_date(text: str) -> tuple[date | None, str | None]:
     return d, (f"{times[0]}-{times[1]}" if len(times) >= 2 else None)
 
 
+def parse_department(text: str) -> str | None:
+    """'(สำเนา) ประกาศกรมตรวจบัญชีสหกรณ์ เรื่อง ...' -> 'กรมตรวจบัญชีสหกรณ์' (top of D0/B0 announcements)."""
+    m = re.search(r"ประกาศ\s*(.{4,80}?)\s*เรื่อง", text[:400])
+    return m.group(1).strip() if m else None
+
+
 def plausible(bid: date | None, pub: date | None) -> bool:
     """A bid date before the announcement or months later means the pattern grabbed the wrong date."""
     return bid is not None and (pub is None or pub <= bid <= pub + timedelta(days=90))

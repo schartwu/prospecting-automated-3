@@ -1,32 +1,33 @@
-# prospecting-automated-3 — e-GP Alert Bidding v3
+# prospecting-automated-3 — e-GP Alert v3
 
 ระบบแจ้งเตือนโครงการจัดซื้อจัดจ้างภาครัฐ (e-GP) สำหรับทีม Sale / Merchandise ของ OfficeMate
-ต่อยอดจาก `prospecting-automated-2`
+ทุกเย็นดึงประกาศจาก RSS ของกรมบัญชีกลาง คัดเฉพาะงานที่ OfficeMate ขายได้ อ่านงบประมาณและวันยื่นซอง
+แล้วส่งอีเมลสรุป (HTML + Excel) ทุกเช้า 07:30 น. วันจันทร์–ศุกร์
 
-## เป้าหมาย
-- รู้ล่วงหน้าก่อนประกาศเชิญชวน: แผนจัดซื้อ (P0) → ราคากลาง (15) → ร่าง TOR (B0) → เชิญชวน (D0) → ผู้ชนะ (W0)
-- คัดเฉพาะโครงการที่ตรงกับสินค้า OfficeMate (กฎ + Gemini)
-- ทีม Sale ให้ Feedback ได้ และวัดยอดขายที่ได้จากระบบ (ROI)
+ขอบเขต: Phase 0 (สำรวจข้อมูล) และ Phase 1 (ระบบแจ้งเตือนรายวัน) — Phase 2/3 ยกเลิกเมื่อ 15 ต.ค. 2569
+รายละเอียดทั้งหมดอยู่ในคู่มือเทคนิค `docs/eGP-Alert-v3-Technical-Manual.docx`
 
-## แผนงาน
-| Phase | งาน | สถานะ |
-|---|---|---|
-| 0 | Discovery: เก็บข้อมูลดิบทุก announce type เพื่อดูของจริงและปริมาณ | กำลังทำ |
-| 1 | Collector + Supabase + คัดกรอง (กฎ + Gemini) + อ่าน PDF + Email สรุป | |
-| 2 | Web dashboard + Feedback + ติดตาม W0 | |
-| 3 | ข้อมูลคู่แข่ง/ราคา + เชื่อม bidding-webapp-2 | |
+## เวลาทำงาน (Asia/Bangkok) — สั่งโดย Supabase pg_cron
+| เวลา | งาน (GitHub Actions) |
+|---|---|
+| 14:00, 16:30 จ.–ศ. | `recheck.yml` ดึงซ้ำเฉพาะ feed ที่ชนเพดาน 20 รายการ |
+| 18:00 ทุกวัน | `daily.yml` ดึง RSS (3 เครื่อง) → บันทึก → คัดกรอง → อ่านเอกสาร |
+| 07:30 จ.–ศ. | `digest.yml --send` ส่งอีเมลสรุป |
 
-## ข้อมูลอ้างอิง
-คู่มือการเชื่อมโยงประกาศจัดซื้อจัดจ้างจากระบบ e-GP ในรูปแบบ RSS (กรมบัญชีกลาง ว37/2561)
-- URL: `http://process3.gprocurement.go.th/EPROCRssFeedWeb/egpannouncerss.xml`
-- พารามิเตอร์: `deptId` (4 หลัก), `deptsubId` (10 หลัก), `methodId`, `anounceType`
-- ข้อจำกัด: ได้แค่ 20 รายการล่าสุด และเฉพาะวันปัจจุบัน ต้องเก็บเองถ้าจะดูย้อนหลัง
+รันด้วยมือ: `sweep.yml` (หารหัสหน่วยงานใหม่), `classify.yml`, `enrich.yml`, `digest.yml` (ไม่ใส่ `--send` = ทำตัวอย่าง)
 
-## Phase 0
+## โครงสร้าง
 ```
-python scripts/import_v2_departments.py <path>/Gov_Main_List.xlsx   # สร้าง data/departments_v2.csv
-python scripts/discover.py --mode types     # หน่วยงานที่รู้จัก x ทุก announce type
-python scripts/discover.py --mode sweep     # ไล่ deptId 0001-9999 หารหัสที่มีจริง
-python scripts/report_discovery.py          # สรุปผล -> reports/discovery_summary.md
+egp/feed.py        RSS client (เพดานเวลา, ลองซ้ำ, HTTP 429)
+egp/db.py          Supabase REST client
+egp/rules.py       กฎคำ ตัดสินชื่อที่ชัดเจน
+egp/classify.py    prompt + schema ให้ Gemini คัดกรอง
+egp/gemini.py      เรียก Gemini ภายในงบรายวันต่อรุ่น
+egp/docs.py        อ่านงบประมาณ/วันยื่นซอง/ชื่อหน่วยงานจาก PDF/ZIP
+scripts/collect.py    ดึง RSS (daily / capped / sweep)
+scripts/load_runs.py  โหลดผลดึงเข้า Supabase
+scripts/classify.py   คัดกรอง (กฎ → Gemini)
+scripts/enrich.py     อ่านเอกสาร
+scripts/digest.py     สร้างและส่งอีเมล + Excel
+supabase/migrations/  โครงสร้างฐานข้อมูล ฟังก์ชัน และ cron
 ```
-ต้องรันบน GitHub Actions เพราะเครือข่ายสำนักงานเชื่อมต่อ RSS ของ e-GP ไม่ได้ (timeout)
