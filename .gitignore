@@ -6,3 +6,4 @@ __pycache__/
 !data/*.xlsx
 out/
 data/runs/
+docs/eGP-Alert-v3-Technical-Manual.docx
