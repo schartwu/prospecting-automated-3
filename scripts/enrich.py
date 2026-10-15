@@ -23,6 +23,7 @@ from egp.db import DB  # noqa: E402
 from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
 
 TYPES = ["D0", "B0", "15", "P0"]
+SCAN_MODELS = [m for m in FLASH_FIRST if "lite" not in m]
 def transient(e: Exception) -> bool:
     """Server-side hiccups (HTTP 5xx such as 511, timeouts): leave the row unsaved so the next run retries."""
     if isinstance(e, (requests.ConnectionError, requests.Timeout)):
@@ -44,9 +45,11 @@ def ai_extract(gemini, text, pub, pdfs=()):
         prompt = docs.EXTRACT_PROMPT.format(text="") + SCAN_PROMPT_NOTE
         attachments = [("application/pdf", b) for b in pdfs[:2]]
     # Reading numbers off a scanned image is where Flash-Lite slipped (dropped digits, a line item instead
-    # of the total), so scans go to the Flash models; plain text is easy and goes to Flash-Lite first.
-    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, FLASH_FIRST if attachments else LITE_FIRST,
-                             validate=check, max_output=1024, attachments=attachments)
+    # of the total; 2026-10-15 check against code-read D0 budgets), so scans use only the Flash models and
+    # wait for the next run when those are busy. Plain text is easy and goes to Flash-Lite first.
+    models = SCAN_MODELS if attachments else LITE_FIRST
+    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, models, validate=check, max_output=1024,
+                             attachments=attachments)
     bid = date.fromisoformat(ans["bid_date"]) if ans.get("bid_date") else None
     return ans.get("budget_thb"), (bid if docs.plausible(bid, pub) else None), ans.get("bid_time"), \
         ans.get("item_count"), model
@@ -90,9 +93,15 @@ class Enricher:
                     detail["item_count"] = items
                     source = f"ai:{model}" + (":scan" if scanned else "")
                 except QuotaExhausted:
+                    if scanned:
+                        self.stats["retry later"] += 1  # Flash models used up today; read it next run
+                        return
                     self.ai_ok = False
                     print("::warning::Gemini budget used up; remaining documents use code patterns only")
                 except RuntimeError as e:
+                    if scanned:
+                        self.stats["retry later"] += 1
+                        return
                     detail["error"] = f"ai: {str(e)[:200]}"
             self.fix_department_name(r, text)
             detail.update(budget_thb=budget, bid_date=bid.isoformat() if bid else None,
