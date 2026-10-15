@@ -18,7 +18,7 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp import docs  # noqa: E402
 from egp.db import DB  # noqa: E402
-from egp.gemini import LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
+from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
 
 TYPES = ["D0", "B0", "15", "P0"]
 SCAN_PROMPT_NOTE = "\n(เอกสารแนบเป็นไฟล์ PDF แบบสแกน ให้อ่านจากภาพในไฟล์)"
@@ -34,8 +34,10 @@ def ai_extract(gemini, text, pub, pdfs=()):
     else:
         prompt = docs.EXTRACT_PROMPT.format(text="") + SCAN_PROMPT_NOTE
         attachments = [("application/pdf", b) for b in pdfs[:2]]
-    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, LITE_FIRST, validate=check, max_output=1024,
-                             attachments=attachments)
+    # Reading numbers off a scanned image is where Flash-Lite slipped (dropped digits, a line item instead
+    # of the total), so scans go to the Flash models; plain text is easy and goes to Flash-Lite first.
+    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, FLASH_FIRST if attachments else LITE_FIRST,
+                             validate=check, max_output=1024, attachments=attachments)
     bid = date.fromisoformat(ans["bid_date"]) if ans.get("bid_date") else None
     return ans.get("budget_thb"), (bid if docs.plausible(bid, pub) else None), ans.get("bid_time"), \
         ans.get("item_count"), model
