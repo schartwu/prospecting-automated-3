@@ -15,12 +15,21 @@ import time
 from collections import defaultdict
 from datetime import date
 
+import requests
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp import docs  # noqa: E402
 from egp.db import DB  # noqa: E402
 from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
 
 TYPES = ["D0", "B0", "15", "P0"]
+def transient(e: Exception) -> bool:
+    """Server-side hiccups (HTTP 5xx such as 511, timeouts): leave the row unsaved so the next run retries."""
+    if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+        return True
+    return isinstance(e, requests.HTTPError) and e.response is not None and e.response.status_code >= 500
+
+
 SCAN_PROMPT_NOTE = "\n(เอกสารแนบเป็นไฟล์ PDF แบบสแกน ให้อ่านจากภาพในไฟล์)"
 
 
@@ -97,6 +106,9 @@ class Enricher:
             else:
                 self.stats["ai" if source.startswith("ai") else "regex"] += 1
         except Exception as e:  # recorded on the row so the digest still shows the announcement
+            if transient(e):
+                self.stats["retry later"] += 1
+                return
             self.stats["error"] += 1
             detail["error"] = f"{type(e).__name__}: {str(e)[:300]}"
         self.save(detail)
@@ -108,6 +120,9 @@ class Enricher:
             lines = docs.parse_plan_lines(raw)
             self.fix_department_name(rows[0], docs.normalize(raw))  # all lines on a page share a department
         except Exception as e:
+            if transient(e):
+                self.stats["retry later"] += len(rows)
+                return
             lines, info, err = {}, {}, f"{type(e).__name__}: {str(e)[:300]}"
         else:
             err = None
