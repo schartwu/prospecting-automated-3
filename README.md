@@ -5,7 +5,7 @@
 แล้วส่งอีเมลสรุป (HTML + Excel) ทุกเช้า 07:30 น. วันจันทร์–ศุกร์
 
 ขอบเขต: Phase 0 (สำรวจข้อมูล) และ Phase 1 (ระบบแจ้งเตือนรายวัน) — Phase 2/3 ยกเลิกเมื่อ 15 ต.ค. 2569
-รายละเอียดทั้งหมดอยู่ในคู่มือเทคนิค `docs/eGP-Alert-v3-Technical-Manual.docx`
+รายละเอียดทั้งหมดอยู่ในคู่มือเทคนิค `docs/eGP-Alert-v3-Technical-Manual-v2.docx`
 
 ## เวลาทำงาน (Asia/Bangkok) — สั่งโดย Supabase pg_cron
 | เวลา | งาน (GitHub Actions) |
