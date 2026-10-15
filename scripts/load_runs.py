@@ -84,6 +84,9 @@ def load_folder(db: DB, folder: str):
     if capped:
         db.upsert("capped_feeds", capped, on_conflict="dept_code,announce_type")
     if mode == "sweep":
+        db.upsert("sweep_attempts", [{"code": r["deptId"], "last_tried_at": started.isoformat(), "ok": r["ok"],
+                                      "found": r["ok"] and r["n_items"] > 0} for r in reqs],
+                  on_conflict="code")
         found = [{"code": r["deptId"], "param": "deptId", "name": f"หน่วยงานรหัส {r['deptId']}",
                   "source": "sweep"} for r in reqs if r["ok"] and r["n_items"] > 0]
         if found:
