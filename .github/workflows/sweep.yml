@@ -1,17 +1,23 @@
 name: Find departments (sweep)
 
-# Run by hand. Tries every 4-digit deptId in the range that is not in `departments` yet; codes with
-# announcements are added, and the evening pipeline collects them from then on. 2,500 codes take
-# about 3 hours, so sweep 0001-9999 in four runs. Re-run occasionally to pick up new departments.
+# Tries deptId codes that are not in `departments` yet; codes with announcements are added and the
+# evening pipeline collects them from then on. Started at 21:00 Bangkok every night by Supabase pg_cron
+# ('egp-night-sweep'): each night takes the next 2,500 untried codes (about 3 hours), so all of
+# 0001-9999 is covered in four nights and re-checked every 90 days. The e-GP server does not answer
+# in the morning, so do not run this by hand during office hours.
 on:
   workflow_dispatch:
     inputs:
       start:
-        description: "first deptId number (e.g. 1)"
-        default: "1"
+        description: "optional fixed range: first deptId number (empty = next untried codes)"
+        default: ""
       end:
-        description: "last deptId number (e.g. 2500)"
-        default: "2500"
+        description: "optional fixed range: last deptId number"
+        default: "9999"
+
+concurrency:
+  group: sweep
+  cancel-in-progress: false
 
 jobs:
   sweep:
@@ -20,6 +26,8 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      START: ${{ inputs.start }}
+      END: ${{ inputs.end }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,13 +36,15 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Sweep
-        run: python scripts/collect.py --mode sweep --start ${{ inputs.start }} --end ${{ inputs.end }} --max-minutes 330
+        run: |
+          if [ -n "$START" ]; then RANGE="--start $START --end ${END:-9999}"; fi
+          python scripts/collect.py --mode sweep $RANGE --max-minutes 330
       - name: Load and add found departments
         if: always()
         run: python scripts/load_runs.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: sweep-${{ inputs.start }}-${{ inputs.end }}-${{ github.run_id }}
+          name: sweep-${{ github.run_id }}
           path: data/runs
           retention-days: 30

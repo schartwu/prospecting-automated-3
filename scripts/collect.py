@@ -6,8 +6,9 @@ Modes:
             can share the work; the server answers HTTP 429 above ~2 parallel requests per IP.
   capped  - only the (department, type) feeds that hit the 20-item cap in the last 7 days
             (Supabase `capped_feeds`), re-read during the afternoon so busy departments lose less.
-  sweep   - deptId codes --start..--end that are not known yet, with W0 (the most frequent type,
-            ~1,300 a week), to discover departments that exist. Run by hand, in chunks.
+  sweep   - deptId codes not known yet, with W0 (the most frequent type, ~1,300 a week), to discover
+            departments that exist. By default the next --codes untried codes (Supabase
+            `next_sweep_codes`); --start/--end sweeps a fixed range instead. Runs at 21:00 nightly.
 
 Each run writes requests.jsonl (one line per feed request) and items.jsonl (one line per RSS item);
 scripts/load_runs.py loads them into Supabase.
@@ -48,9 +49,12 @@ def build_requests(db: DB, args) -> list[tuple[dict, dict]]:
         return [({"deptId": f["dept_code"], "anounceType": f["announce_type"]}, {"dept_name": f["dept_name"]})
                 for f in feeds]
     if args.mode == "sweep":
-        known = {d["code"] for d in db.select("departments", select="code")}
-        return [({"deptId": f"{n:04d}", "anounceType": "W0"}, {"dept_name": ""})
-                for n in range(args.start, args.end + 1) if f"{n:04d}" not in known]
+        if args.start is None:
+            codes = [r["code"] for r in db.rpc("next_sweep_codes", {"p_limit": args.codes})]
+        else:
+            known = {d["code"] for d in db.select("departments", select="code")}
+            codes = [f"{n:04d}" for n in range(args.start, args.end + 1) if f"{n:04d}" not in known]
+        return [({"deptId": code, "anounceType": "W0"}, {"dept_name": ""}) for code in codes]
     raise ValueError(args.mode)
 
 
@@ -60,8 +64,9 @@ def main():
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--shard", type=int, default=0)
     ap.add_argument("--shards", type=int, default=1)
-    ap.add_argument("--start", type=int, default=1, help="sweep: first deptId number")
+    ap.add_argument("--start", type=int, default=None, help="sweep: first deptId number (default: next untried)")
     ap.add_argument("--end", type=int, default=9999, help="sweep: last deptId number")
+    ap.add_argument("--codes", type=int, default=2500, help="sweep: how many untried codes per run")
     ap.add_argument("--max-minutes", type=float, default=170,
                     help="stop sending new requests after this long and keep what was collected")
     args = ap.parse_args()
