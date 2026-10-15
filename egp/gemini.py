@@ -1,4 +1,5 @@
 """Gemini JSON calls that stay inside per-model daily budgets and fall back across models."""
+import base64
 import json
 import time
 
@@ -39,14 +40,16 @@ class Gemini:
         self.take = take
         self.skip: set[str] = set()  # models out of budget/quota or not offered to this key
 
-    def json(self, prompt: str, schema: dict, models: list[str], validate=None, max_output: int = 32768):
-        """Return (parsed_json, model). validate(parsed) may raise ValueError to reject an answer."""
+    def json(self, prompt: str, schema: dict, models: list[str], validate=None, max_output: int = 32768,
+             attachments: list[tuple[str, bytes]] = ()):
+        """Return (parsed_json, model). validate(parsed) may raise ValueError to reject an answer.
+        attachments: (mime type, bytes) files sent with the prompt, e.g. a scanned PDF to read."""
         errors = []
         for model in models:
             if model in self.skip:
                 continue
             try:
-                return self._call(model, prompt, schema, validate, max_output), model
+                return self._call(model, prompt, schema, validate, max_output, attachments), model
             except _ModelUnavailable as e:
                 self.skip.add(model)
                 errors.append(str(e))
@@ -56,14 +59,16 @@ class Gemini:
             raise QuotaExhausted(" | ".join(errors))
         raise RuntimeError(" | ".join(errors))
 
-    def _call(self, model, prompt, schema, validate, max_output, retries: int = 2):
+    def _call(self, model, prompt, schema, validate, max_output, attachments=(), retries: int = 2):
         config = {"temperature": 0, "responseMimeType": "application/json", "responseSchema": schema,
                   "maxOutputTokens": max_output}
         if model.startswith("gemini-2.5"):
             # 2.5 models think by default and those tokens count against the output limit, which can
             # cut a long JSON answer short. These tasks do not need it.
             config["thinkingConfig"] = {"thinkingBudget": 0}
-        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}
+        parts = [{"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}}
+                 for mime, data in attachments] + [{"text": prompt}]
+        body = {"contents": [{"parts": parts}], "generationConfig": config}
 
         last = None
         for _ in range(retries):

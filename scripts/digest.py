@@ -73,9 +73,19 @@ def days_left(r, today):
     return (datetime.fromisoformat(r["bid_date"]).date() - today).days if r.get("bid_date") else None
 
 
+def expected_label(r):
+    """Plans carry the month the department expects to announce, e.g. '2026-10' -> 'ต.ค. 2569'."""
+    if not r.get("expected_month"):
+        return None
+    year, month = (int(x) for x in r["expected_month"].split("-"))
+    names = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+    return f"{names[month - 1]} {year + 543}"
+
+
 def bid_cell(r, today):
     if not r.get("bid_date"):
-        return "-"
+        expected = expected_label(r)
+        return f"<span style='color:#666;font-size:12px'>คาดว่าประกาศ</span><br>{expected}" if expected else "-"
     left = days_left(r, today)
     when = datetime.fromisoformat(r["bid_date"]).strftime("%d/%m")
     time_ = f" {r['bid_time']}" if r.get("bid_time") else ""
@@ -160,15 +170,17 @@ def write_xlsx(rows, path):
     cols = {"section": "หมวดอีเมล", "score": "คะแนน", "type_label": "ประเภทประกาศ", "title": "ชื่อโครงการ",
             "dept_name": "หน่วยงาน", "category": "หมวดสินค้า", "reason": "เหตุผล", "budget_thb": "งบประมาณ (บาท)",
             "bid_date": "วันยื่นซอง", "bid_time": "เวลายื่น", "days_left": "เหลือ (วัน)",
+            "expected": "คาดว่าจะประกาศ",
             "pub_date": "วันที่ประกาศ", "method": "วิธีจัดหา", "project_no": "เลขโครงการ", "plan_no": "เลขแผน",
             "cancelled": "ยกเลิกแล้ว", "amended": "มีการแก้ไขประกาศ", "link": "ลิงก์"}
-    data = [{**r, "type_label": f"{TYPE_LABEL.get(r['announce_type'], r['announce_type'])} ({r['announce_type']})"}
-            for r in rows]
+    data = [{**r, "type_label": f"{TYPE_LABEL.get(r['announce_type'], r['announce_type'])} ({r['announce_type']})",
+             "expected": expected_label(r)} for r in rows]
     df = pd.DataFrame(data, columns=list(cols)).rename(columns=cols)
 
     columns_help = [
-        ("งบประมาณ (บาท)", "ราคากลางที่อ่านจากเอกสารประกาศ (ว่าง = เอกสารเปิดไม่ได้หรือไม่ระบุ)"),
+        ("งบประมาณ (บาท)", "ราคากลางจากเอกสารประกาศ หรืองบประมาณโครงการจากหน้าแผนจัดซื้อ (ว่าง = เอกสารต้องล็อกอิน e-GP หรือไม่ระบุ)"),
         ("วันยื่นซอง / เวลายื่น", "วันและช่วงเวลาเสนอราคาในระบบ e-GP (มีเฉพาะประกาศเชิญชวน)"),
+        ("คาดว่าจะประกาศ", "เดือนที่หน่วยงานคาดว่าจะประกาศจัดซื้อ (มีเฉพาะแผนจัดซื้อ P0)"),
         ("เหลือ (วัน)", "จำนวนวันจากวันที่ส่งอีเมลถึงวันยื่นซอง"),
         ("ยกเลิกแล้ว", "โครงการเดียวกันมีประกาศยกเลิกประกาศเชิญชวน (D1) ตามมา — ไม่ต้องตามต่อ"),
         ("มีการแก้ไขประกาศ", "โครงการเดียวกันมีประกาศแก้ไขประกาศเชิญชวน (D2) — เปิดดูรายละเอียดใหม่"),
