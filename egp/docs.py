@@ -66,13 +66,16 @@ def html_text(data: bytes) -> str:
 
 def parse_plan_lines(text: str) -> dict[str, dict]:
     """P0 plan page table: 'ลำดับ | รหัสแผน | ชื่อโครงการ | งบประมาณ (บาท) | คาดว่าจะประกาศ (เดือน/ปี)'.
-    Returns {plan_no: {"budget_thb": float, "expected_month": "YYYY-MM"}}."""
+    Returns {plan_no: {"budget_thb": float, "expected_month": "YYYY-MM" or None}}. The month cell is
+    sometimes malformed at the source (e.g. '09//259'); the budget is still kept."""
     text = text.translate(THAI_DIGITS)
     lines = {}
-    for m in re.finditer(r"(P\d{11})\s*\|(.*?)\|\s*([\d,]+\.\d{2})\s*\|\s*(\d{1,2})\s*/\s*(\d{4})", text, re.S):
-        month, year_be = int(m.group(4)), int(m.group(5))
-        lines[m.group(1)] = {"budget_thb": float(m.group(3).replace(",", "")),
-                             "expected_month": f"{year_be - 543:04d}-{month:02d}" if 1 <= month <= 12 else None}
+    for m in re.finditer(r"(P\d{11})\s*\|(.*?)\|\s*([\d,]+\.\d{2})\s*\|([^|\n]*)", text, re.S):
+        expected = None
+        my = re.fullmatch(r"\s*(\d{1,2})\s*/\s*(\d{4})\s*", m.group(4))
+        if my and 1 <= int(my.group(1)) <= 12:
+            expected = f"{int(my.group(2)) - 543:04d}-{int(my.group(1)):02d}"
+        lines[m.group(1)] = {"budget_thb": float(m.group(3).replace(",", "")), "expected_month": expected}
     return lines
 
 
