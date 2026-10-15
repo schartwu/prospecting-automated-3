@@ -2,7 +2,8 @@ name: Afternoon recheck
 
 # Re-reads only the feeds that hit the RSS 20-item cap in the last 7 days (busy departments such as
 # สป.สาธารณสุข or กรมชลประทาน), so items pushed out of the feed before 18:00 are still caught.
-# Started by Supabase pg_cron at 14:00 and 16:30 Bangkok, Mon-Fri. Items found here are classified
+# Run by hand in the evening only: the e-GP RSS server does not answer during the working day (the 14:00
+# and 16:30 schedules were removed on 2026-10-15). Items found here are classified
 # by the evening pipeline.
 on:
   workflow_dispatch:
