@@ -70,6 +70,10 @@ def main():
                     print("::warning::Gemini budget used up; remaining documents use code patterns only")
                 except RuntimeError as e:
                     detail["error"] = f"ai: {str(e)[:200]}"
+            if r.get("dept_needs_name") and r.get("dept_code"):
+                name = docs.parse_department(text)
+                if name:
+                    db.rpc("set_department_name", {"p_code": r["dept_code"], "p_name": name})
             detail.update(budget_thb=budget, bid_date=bid.isoformat() if bid else None,
                           extracted={**info, "bid_time": bid_time, "source": source, "text_chars": len(text)})
             if budget is None and bid is None:

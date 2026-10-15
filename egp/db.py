@@ -32,6 +32,12 @@ class DB:
             f"{self.base}/{table}", params={"on_conflict": on_conflict}, json=rows,
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"}, timeout=120))
 
+    def insert_ignore(self, table: str, rows: list, on_conflict: str):
+        """Insert rows, leaving existing rows (same on_conflict key) untouched."""
+        return self._check(self.s.post(
+            f"{self.base}/{table}", params={"on_conflict": on_conflict}, json=rows,
+            headers={"Prefer": "resolution=ignore-duplicates,return=minimal"}, timeout=120))
+
     def update(self, table: str, values: dict, **filters):
         return self._check(self.s.patch(f"{self.base}/{table}", params=filters, json=values,
                                         headers={"Prefer": "return=minimal"}, timeout=60))

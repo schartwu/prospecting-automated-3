@@ -1,0 +1,32 @@
+name: Afternoon recheck
+
+# Re-reads only the feeds that hit the RSS 20-item cap in the last 7 days (busy departments such as
+# สป.สาธารณสุข or กรมชลประทาน), so items pushed out of the feed before 18:00 are still caught.
+# Started by Supabase pg_cron at 14:00 and 16:30 Bangkok, Mon-Fri. Items found here are classified
+# by the evening pipeline.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: recheck
+  cancel-in-progress: false
+
+jobs:
+  recheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Collect capped feeds
+        run: python scripts/collect.py --mode capped --max-minutes 30
+      - name: Load into Supabase
+        if: always()
+        run: python scripts/load_runs.py

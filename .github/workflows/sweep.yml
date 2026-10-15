@@ -1,0 +1,40 @@
+name: Find departments (sweep)
+
+# Run by hand. Tries every 4-digit deptId in the range that is not in `departments` yet; codes with
+# announcements are added, and the evening pipeline collects them from then on. 2,500 codes take
+# about 3 hours, so sweep 0001-9999 in four runs. Re-run occasionally to pick up new departments.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "first deptId number (e.g. 1)"
+        default: "1"
+      end:
+        description: "last deptId number (e.g. 2500)"
+        default: "2500"
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Sweep
+        run: python scripts/collect.py --mode sweep --start ${{ inputs.start }} --end ${{ inputs.end }} --max-minutes 330
+      - name: Load and add found departments
+        if: always()
+        run: python scripts/load_runs.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sweep-${{ inputs.start }}-${{ inputs.end }}-${{ github.run_id }}
+          path: data/runs
+          retention-days: 30
