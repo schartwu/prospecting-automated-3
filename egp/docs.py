@@ -56,7 +56,7 @@ def fetch_text(url: str) -> tuple[str, dict, list[bytes]]:
 
 def html_text(data: bytes) -> str:
     """HTML to text with table cells separated by ' | ' and rows on their own lines."""
-    raw = data.decode("tis-620", errors="replace")
+    raw = data.decode("cp874", errors="replace")  # TIS-620 plus the no-break space (0xA0) the pages use
     raw = re.sub(r"<script.*?</script>|<style.*?</style>", " ", raw, flags=re.S | re.I)
     raw = re.sub(r"<br\s*/?>|</tr>|</p>|</div>", "\n", raw, flags=re.I)
     raw = re.sub(r"</t[dh]>", " | ", raw, flags=re.I)
@@ -114,6 +114,44 @@ def parse_bid_date(text: str) -> tuple[date | None, str | None]:
         return None, None
     times = re.findall(r"\b(\d{2}\.\d{2})\b", tail[my.end():my.end() + 60])
     return d, (f"{times[0]}-{times[1]}" if len(times) >= 2 else None)
+
+
+def parse_winners(text: str) -> tuple[list[str], float | None]:
+    """W0: '... ผู้ได้รับการคัดเลือก ได้แก่ บริษัท X จำกัด (ขายส่ง,ขายปลีก) โดยเสนอราคา เป็นเงินทั้งสิ้น
+    273,000.00 บาท'. An announcement with several lots names a winner per lot; returns the distinct
+    winners and the total of their prices. PDF text (e-bidding results) comes out jumbled; when a
+    'name' does not look like one, nothing is returned so the caller can ask Gemini."""
+    winners, total = [], 0.0
+    for m in re.finditer(r"ได้แก่\s*(.{3,200}?)\s*โดย\s*(?:ได้\s*)?เสนอราคา", text):
+        name = re.sub(r"\s*\((?:ส่งออก|ขาย|ให้บริการ|ผลิต|ผู้ผลิต)[^)]*\)\s*$", "", m.group(1))
+        name = re.sub(r"\s+เลขที่\s.*$", "", name).strip(" ,")  # some pages add the address
+        if not name or re.search(r"จำนวน|โครงการ|ซึ่ง|ได้แก่", name) or len(name) > 120:
+            return [], None
+        if name not in winners:
+            winners.append(name)
+        price = re.search(MONEY, text[m.end():m.end() + 200])
+        if price:
+            total += float(price.group(1).replace(",", ""))
+    return winners, (total or None)
+
+
+WINNER_PROMPT = """ข้อความด้านล่างมาจากประกาศผู้ชนะการเสนอราคาของภาครัฐ (ข้อความอาจเรียงสลับตำแหน่ง)
+ให้ดึงข้อมูลต่อไปนี้ ถ้าไม่มีในเอกสารให้ใส่ null:
+- winners: รายชื่อผู้ชนะ/ผู้ได้รับการคัดเลือก (ชื่อบริษัท ห้าง ร้าน หรือบุคคล ไม่ต้องใส่ประเภทกิจการในวงเล็บ) ถ้ามีหลายรายการให้ใส่ทุกราย ไม่ซ้ำ
+- price_thb: ราคาที่ผู้ชนะเสนอ รวมทุกรายการ เป็นตัวเลขบาท
+
+เอกสาร:
+{text}
+"""
+
+WINNER_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "winners": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "price_thb": {"type": "NUMBER", "nullable": True},
+    },
+    "required": ["winners", "price_thb"],
+}
 
 
 def parse_department(text: str) -> str | None:

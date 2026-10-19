@@ -2,6 +2,10 @@
 
 Daily: new D0 (bid now), B0 (prepare stock), 15 (new reference prices). Mondays also add the week's
 new P0 plans and W0 results. Only items first seen since the previous digest are included.
+
+Only Sales' provinces go in the email (TARGET_PROVINCES, a repository variable, else DEFAULT_PROVINCES).
+Announcements whose province could not be read (mostly central offices in Bangkok/Nonthaburi) stay in;
+those clearly in another province go to a separate Excel tab instead of being dropped.
 """
 import argparse
 import html
@@ -15,10 +19,14 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from egp import provinces  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 BKK = ZoneInfo("Asia/Bangkok")
 ROOT = os.path.join(os.path.dirname(__file__), "..")
+# Bangkok, its surrounding provinces and the east: the area the Sales team covers (2026-10-19).
+DEFAULT_PROVINCES = ("กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, "
+                     "พระนครศรีอยุธยา, สระบุรี, นครนายก, ปราจีนบุรี, ฉะเชิงเทรา, ชลบุรี, ระยอง, จันทบุรี")
 
 SECTIONS = [
     # (types, heading, what Sales/Merchandise should do, when, min score or None for the default)
@@ -97,16 +105,18 @@ def bid_cell(r, today):
 EMAIL_ROW_LIMIT = 30  # per section; the attached Excel always has every row
 
 
-def section_html(heading, hint, rows, today):
+def section_html(heading, hint, rows, today, results=False):
+    """results=True (W0): the money and date columns show the winning price and the winner instead."""
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
     shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
     if not rows:
         out.append('<div style="color:#999;font-size:13px">ไม่มีรายการใหม่</div>')
         return "\n".join(out)
+    money_head, last_head = ("ราคาที่ชนะ (บาท)", "ผู้ชนะ") if results else ("งบ (บาท)", "วันยื่นซอง")
     out.append('<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
                '<tr style="background:#f2f2f2;text-align:left"><th>คะแนน</th><th>โครงการ</th><th>หน่วยงาน</th>'
-               '<th>งบ (บาท)</th><th>วันยื่นซอง</th><th>วันที่ประกาศ</th></tr>')
+               f'<th>{money_head}</th><th>{last_head}</th><th>วันที่ประกาศ</th></tr>')
     for r in rows:
         flags = ", ".join(TYPE_LABEL.get(s, s) for s in (r.get("stages") or []) if s != r["announce_type"])
         badges = ""
@@ -121,9 +131,10 @@ def section_html(heading, hint, rows, today):
             f"<td><b>{r['score']}</b></td>"
             f"<td><a href=\"{html.escape(r['link'])}\">{html.escape(r['title'][:220])}</a>{badges}"
             f"<div style='color:#888;font-size:12px'>{html.escape(sub)}</div></td>"
-            f"<td>{html.escape(r.get('dept_name') or '')}</td>"
-            f"<td style='text-align:right'>{fmt_money(r.get('budget_thb'))}</td>"
-            f"<td>{bid_cell(r, today)}</td>"
+            f"<td>{html.escape(r.get('dept_name') or '')}"
+            f"<div style='color:#888;font-size:12px'>{html.escape(r.get('province') or 'ไม่ระบุจังหวัด')}</div></td>"
+            f"<td style='text-align:right'>{fmt_money(r.get('winner_price') if results else r.get('budget_thb'))}</td>"
+            f"<td>{html.escape(r.get('winners') or '-') if results else bid_cell(r, today)}</td>"
             f"<td>{r.get('pub_date') or ''}</td></tr>")
     out.append("</table>")
     if len(shown) > len(rows):
@@ -132,9 +143,10 @@ def section_html(heading, hint, rows, today):
     return "\n".join(out)
 
 
-def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
+def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str]):
+    """Returns (email html, rows in the email, rows clearly in other provinces)."""
     today = now.date()
-    parts, all_rows = [], []
+    parts, all_rows, elsewhere = [], [], []
     for types, heading, hint, when, sec_min in SECTIONS:
         if (when == "weekly" and not weekly) or (when == "not_weekly" and weekly):
             continue
@@ -142,6 +154,10 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
         sec_since = min(since, now - timedelta(days=7)) if when == "weekly" else since
         rows = db.rpc("digest_items", {"p_since": sec_since.isoformat(), "p_types": types,
                                        "p_min_score": max(min_score, sec_min or 0)})
+        # Keep Sales' provinces and the ones nobody could place; set the rest aside for the Excel tab.
+        elsewhere += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows
+                      if r.get("province") and r["province"] not in targets]
+        rows = [r for r in rows if not r.get("province") or r["province"] in targets]
         if types == ["15"]:
             # Reference prices for projects that also got a D0 are already shown under D0.
             rows = [r for r in rows if "D0" not in (r.get("stages") or [])]
@@ -151,34 +167,42 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int):
                 left = days_left(r, today)
                 return (left is None or left < 0, left if left is not None else 999, -r["score"])
             rows.sort(key=urgency)
-        parts.append(section_html(heading, hint, rows, today))
+        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"]))
         all_rows += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows]
 
     total = len(all_rows)
     head = (f'<div style="font-family:Tahoma,sans-serif;max-width:980px">'
             f'<h2 style="margin:0">e-GP Alert — {now:%d/%m/%Y}</h2>'
             f'<div style="color:#666">ประกาศใหม่ที่เกี่ยวกับ OfficeMate ตั้งแต่ {since.astimezone(BKK):%d/%m %H:%M} น. '
-            f'รวม {total} รายการ (คะแนน ≥ {min_score})</div>')
+            f'รวม {total} รายการ (คะแนน ≥ {min_score})<br>เฉพาะจังหวัด: {html.escape(", ".join(sorted(targets)))} '
+            f'และประกาศที่ไม่ระบุจังหวัด (ส่วนใหญ่เป็นส่วนกลาง)'
+            + (f' · จังหวัดอื่น {len(elsewhere)} รายการอยู่ในแท็บ "จังหวัดอื่น" ของไฟล์ Excel' if elsewhere else '')
+            + '</div>')
     bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
     foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
             f'{html.escape(bands)}<br>งบ = ราคากลางจากเอกสารประกาศ · ไฟล์ Excel แนบมีรายการทั้งหมดและแท็บคำอธิบาย '
             '· ระบบ e-GP Alert v3</p></div>')
-    return head + "\n".join(parts) + foot, all_rows
+    return head + "\n".join(parts) + foot, all_rows, elsewhere
 
 
-def write_xlsx(rows, path):
+def write_xlsx(rows, path, elsewhere=()):
     cols = {"section": "หมวดอีเมล", "score": "คะแนน", "type_label": "ประเภทประกาศ", "title": "ชื่อโครงการ",
-            "dept_name": "หน่วยงาน", "category": "หมวดสินค้า", "reason": "เหตุผล", "budget_thb": "งบประมาณ (บาท)",
+            "dept_name": "หน่วยงาน", "province": "จังหวัด", "category": "หมวดสินค้า", "reason": "เหตุผล",
+            "budget_thb": "งบประมาณ (บาท)", "winners": "ผู้ชนะ", "winner_price": "ราคาที่ชนะ (บาท)",
             "bid_date": "วันยื่นซอง", "bid_time": "เวลายื่น", "days_left": "เหลือ (วัน)",
             "expected": "คาดว่าจะประกาศ",
             "pub_date": "วันที่ประกาศ", "method": "วิธีจัดหา", "project_no": "เลขโครงการ", "plan_no": "เลขแผน",
             "cancelled": "ยกเลิกแล้ว", "amended": "มีการแก้ไขประกาศ", "link": "ลิงก์"}
-    data = [{**r, "type_label": f"{TYPE_LABEL.get(r['announce_type'], r['announce_type'])} ({r['announce_type']})",
-             "expected": expected_label(r)} for r in rows]
-    df = pd.DataFrame(data, columns=list(cols)).rename(columns=cols)
+    def frame(rs):
+        data = [{**r, "type_label": f"{TYPE_LABEL.get(r['announce_type'], r['announce_type'])} ({r['announce_type']})",
+                 "expected": expected_label(r)} for r in rs]
+        return pd.DataFrame(data, columns=list(cols)).rename(columns=cols)
 
     columns_help = [
-        ("งบประมาณ (บาท)", "ราคากลางจากเอกสารประกาศ หรืองบประมาณโครงการจากหน้าแผนจัดซื้อ (ว่าง = เอกสารต้องล็อกอิน e-GP หรือไม่ระบุ)"),
+        ("จังหวัด", "อ่านจากชื่อโครงการและเอกสารประกาศ (ว่าง = เอกสารไม่ระบุจังหวัด ส่วนใหญ่เป็นหน่วยงานส่วนกลาง)"),
+        ("งบประมาณ (บาท)", "ราคากลางจากเอกสารประกาศ หรืองบประมาณโครงการจากหน้าแผนจัดซื้อ (ว่าง = เอกสารต้องล็อกอิน e-GP หรือไม่ระบุ "
+                           "ประกาศผู้ชนะแบบเฉพาะเจาะจงไม่มีประกาศราคากลางก่อนหน้า จึงมักว่าง ให้ดูราคาที่ชนะแทน)"),
+        ("ผู้ชนะ / ราคาที่ชนะ (บาท)", "ชื่อผู้ชนะและราคาที่เสนอจากประกาศผู้ชนะ (W0) ถ้ามีหลายรายการ ราคาเป็นยอดรวม"),
         ("วันยื่นซอง / เวลายื่น", "วันและช่วงเวลาเสนอราคาในระบบ e-GP (มีเฉพาะประกาศเชิญชวน)"),
         ("คาดว่าจะประกาศ", "เดือนที่หน่วยงานคาดว่าจะประกาศจัดซื้อ (มีเฉพาะแผนจัดซื้อ P0)"),
         ("เหลือ (วัน)", "จำนวนวันจากวันที่ส่งอีเมลถึงวันยื่นซอง"),
@@ -190,12 +214,15 @@ def write_xlsx(rows, path):
                for k, v in TYPE_MEANING.items()]
               + [{"หัวข้อ": "คะแนน", "ค่า": b, "ความหมาย": d} for b, d in SCORE_BANDS]
               + [{"หัวข้อ": "คอลัมน์", "ค่า": k, "ความหมาย": v} for k, v in columns_help])
+    sheets = [("รายการ", rows)] + ([("จังหวัดอื่น", elsewhere)] if elsewhere else [])
     with pd.ExcelWriter(path) as xw:
-        df.to_excel(xw, sheet_name="รายการ", index=False)
+        for name, rs in sheets:
+            frame(rs).to_excel(xw, sheet_name=name, index=False)
         pd.DataFrame(legend).to_excel(xw, sheet_name="คำอธิบาย", index=False)
-        style_sheet(xw.sheets["รายการ"], number_cols={"งบประมาณ (บาท)"},
-                    wrap_cols={"ชื่อโครงการ": 60, "เหตุผล": 35, "หน่วยงาน": 28,
-                               "หมวดอีเมล": 24, "หมวดสินค้า": 22, "วิธีจัดหา": 24})
+        for name, _ in sheets:
+            style_sheet(xw.sheets[name], number_cols={"งบประมาณ (บาท)", "ราคาที่ชนะ (บาท)"},
+                        wrap_cols={"ชื่อโครงการ": 60, "เหตุผล": 35, "หน่วยงาน": 28, "ผู้ชนะ": 30,
+                                   "หมวดอีเมล": 24, "หมวดสินค้า": 22, "วิธีจัดหา": 24})
         style_sheet(xw.sheets["คำอธิบาย"], wrap_cols={"ความหมาย": 80})
 
 
@@ -271,14 +298,16 @@ def main():
         since = now - timedelta(days=1)
     weekly = now.weekday() == 0 if args.weekly == "auto" else args.weekly == "yes"
 
-    body, rows = build(db, since, now, weekly, args.min_score)
+    targets = provinces.parse_targets(os.environ.get("TARGET_PROVINCES") or DEFAULT_PROVINCES)
+    body, rows, elsewhere = build(db, since, now, weekly, args.min_score, targets)
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
     xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}.xlsx")
-    write_xlsx(rows, xlsx)
+    write_xlsx(rows, xlsx, elsewhere)
     with open(os.path.join(out, "digest_preview.html"), "w", encoding="utf-8") as f:
         f.write(body)
-    print(f"digest since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items -> {out}")
+    print(f"digest since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items "
+          f"(+{len(elsewhere)} in other provinces) -> {out}")
 
     if args.send:
         # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
