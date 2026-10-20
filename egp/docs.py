@@ -124,7 +124,8 @@ def parse_winners(text: str) -> tuple[list[str], float | None]:
     winners, total = [], 0.0
     for m in re.finditer(r"ได้แก่\s*(.{3,200}?)\s*โดย\s*(?:ได้\s*)?เสนอราคา", text):
         name = re.sub(r"\s*\((?:ส่งออก|ขาย|ให้บริการ|ผลิต|ผู้ผลิต)[^)]*\)\s*$", "", m.group(1))
-        name = re.sub(r"\s+เลขที่\s.*$", "", name).strip(" ,")  # some pages add the address
+        # some pages add the address or "ผู้ประกอบการที่มีอาชีพขาย..." after the name
+        name = re.sub(r"\s+(?:เลขที่|ผู้ประกอบการ)\s?.*$", "", name).strip(" ,")
         if not name or re.search(r"จำนวน|โครงการ|ซึ่ง|ได้แก่", name) or len(name) > 120:
             return [], None
         if name not in winners:
