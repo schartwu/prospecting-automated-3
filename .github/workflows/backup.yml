@@ -1,0 +1,28 @@
+name: Weekly backup
+
+# Emails the Lead Loop statuses and users as CSV (scripts/backup.py). A late start does not matter here,
+# so GitHub's own schedule is used: Sunday 08:00 Bangkok.
+on:
+  schedule:
+    - cron: "0 1 * * 0"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Back up and email
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          BACKUP_RECIPIENTS: ${{ vars.BACKUP_RECIPIENTS }}
+        run: python scripts/backup.py
