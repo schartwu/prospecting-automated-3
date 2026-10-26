@@ -13,6 +13,7 @@ import os
 import re
 import smtplib
 import sys
+from urllib.parse import quote
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from zoneinfo import ZoneInfo
@@ -24,6 +25,8 @@ from egp import provinces  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 BKK = ZoneInfo("Asia/Bangkok")
+# KG Lead Loop web app (GitHub Pages, .github/workflows/pages.yml).
+LEAD_APP_URL = os.environ.get("LEAD_APP_URL") or "https://schartwu.github.io/prospecting-automated-3/"
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 # Bangkok, its surrounding provinces and the east: the area the Sales team covers (2026-10-19).
 DEFAULT_PROVINCES = ("กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, "
@@ -106,8 +109,20 @@ def bid_cell(r, today):
 EMAIL_ROW_LIMIT = 30  # per section; the attached Excel always has every row
 
 
-def section_html(heading, hint, rows, today, results=False):
-    """results=True (W0): the money and date columns show the winning price and the winner instead."""
+def lead_key(r):
+    """The key the Lead web app uses: the 11-digit project number, or 'P:' + plan number for plans."""
+    return f"P:{r['plan_no']}" if r["announce_type"] == "P0" and r.get("plan_no") else r.get("project_no")
+
+
+def update_button(url):
+    return (f'<div style="margin-top:4px"><a href="{html.escape(url)}" style="display:inline-block;'
+            'background:#0b6e69;color:#ffffff;text-decoration:none;font-size:12px;padding:3px 10px;'
+            'border-radius:5px">อัปเดตสถานะ</a></div>')
+
+
+def section_html(heading, hint, rows, today, results=False, app_link=None):
+    """results=True (W0): the money and date columns show the winning price and the winner instead.
+    app_link(key) -> the reader's own link to that lead in the web app (KG Lead Loop trial), or None."""
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
     shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
@@ -127,6 +142,8 @@ def section_html(heading, hint, rows, today, results=False):
             badges += ' <b style="color:#d97706">[มีการแก้ไขประกาศ]</b>'
         sub = " · ".join(filter(None, [r.get("category"), r.get("reason"),
                                        f"มีประกาศ: {flags}" if flags else None]))
+        if app_link and not results and lead_key(r):
+            badges += update_button(app_link(lead_key(r)))
         out.append(
             "<tr style='border-top:1px solid #eee;vertical-align:top'>"
             f"<td><b>{r['score']}</b></td>"
@@ -241,7 +258,7 @@ def outcomes_html(rows, targets):
 
 
 def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str],
-          with_outcomes: bool = True):
+          with_outcomes: bool = True, app_link=None, board_link=None):
     """Returns (email html, rows in the email, rows clearly in other provinces, Monday outcome rows)."""
     today = now.date()
     parts, all_rows, elsewhere, outcome_rows = [], [], [], []
@@ -269,7 +286,7 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
                 left = days_left(r, today)
                 return (left is None or left < 0, left if left is not None else 999, -r["score"])
             rows.sort(key=urgency)
-        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"]))
+        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"], app_link=app_link))
         all_rows += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows]
 
     total = len(all_rows)
@@ -279,7 +296,9 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
             f'รวม {total} รายการ (คะแนน ≥ {min_score})<br>เฉพาะจังหวัด: {html.escape(", ".join(sorted(targets)))} '
             f'และประกาศที่ไม่ระบุจังหวัด (ส่วนใหญ่เป็นส่วนกลาง)'
             + (f' · จังหวัดอื่น {len(elsewhere)} รายการอยู่ในแท็บ "จังหวัดอื่น" ของไฟล์ Excel' if elsewhere else '')
-            + '</div>')
+            + '</div>'
+            + (f'<div style="margin-top:8px"><a href="{html.escape(board_link)}" style="color:#0b6e69;font-weight:bold">'
+               'เปิดกระดาน Lead (สถานะทุกรายการ) →</a></div>' if board_link else ''))
     bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
     foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
             f'{html.escape(bands)}<br>งบ = ราคากลางจากเอกสารประกาศ · ไฟล์ Excel แนบมีรายการทั้งหมดและแท็บคำอธิบาย '
@@ -418,14 +437,19 @@ def main():
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
 
-    def make(loop: bool, suffix: str = ""):
-        """loop=True adds the KG Lead Loop parts (Monday outcomes). While those are on trial they go only
-        to LOOP_RECIPIENTS; the team's digest stays as it was."""
-        body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets, with_outcomes=loop)
+    def make(loop: bool, suffix: str = "", token: str | None = None):
+        """loop=True adds the KG Lead Loop parts (Monday outcomes; with the reader's token, an "อัปเดตสถานะ"
+        button on every lead and a link to the lead board). While those are on trial they go only to
+        LOOP_RECIPIENTS; the team's digest stays as it was."""
+        app_link = (lambda key: f"{LEAD_APP_URL}#t={token}&lead={quote(key)}") if token else None
+        body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets, with_outcomes=loop,
+                                                app_link=app_link,
+                                                board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
         xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}{suffix}.xlsx")
         write_xlsx(rows, xlsx, elsewhere, outcomes)
-        with open(os.path.join(out, f"digest_preview{suffix}.html"), "w", encoding="utf-8") as f:
-            f.write(body)
+        if not token:  # out/ is uploaded as a run artifact of this public repository; personal links stay out
+            with open(os.path.join(out, f"digest_preview{suffix}.html"), "w", encoding="utf-8") as f:
+                f.write(body)
         print(f"digest{suffix} since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items "
               f"(+{len(elsewhere)} in other provinces, {len(outcomes)} outcomes) -> {out}")
         return body, rows, outcomes, xlsx
@@ -449,15 +473,25 @@ def main():
     def emails(value):
         return [e.strip() for e in (value or "").split(",") if e.strip()]
 
+    def token_of(email):
+        """The person's own web-app link token, if they are a Lead Loop user. Each of them gets their own
+        copy of the email, since the links inside identify the reader."""
+        found = db.select("lead_users", select="token", email=f"eq.{email}", active="eq.true")
+        return found[0]["token"] if found else None
+
+    def send_personal(to, prefix, suffix):
+        for i, email in enumerate(to):
+            body, rows, outcomes, xlsx = make(loop=True, suffix=f"{suffix}{i}", token=token_of(email))
+            send(subject(rows, outcomes, prefix), body, xlsx, [email])
+        print(f"{prefix.strip()} sent to {len(to)} recipient(s)")
+
     loop_to = emails(os.environ.get("LOOP_RECIPIENTS"))
     if not args.send:
-        make(loop=True)  # previews show everything, trial parts included
+        make(loop=True)  # previews show everything, trial parts included (no personal links)
         return
 
     if args.to:  # a test send: the full version, and the "since" window of the real digest stays put
-        body, rows, outcomes, xlsx = make(loop=True)
-        send(subject(rows, outcomes, "[ทดสอบ] "), body, xlsx, emails(args.to))
-        print(f"test sent to {len(emails(args.to))} recipient(s)")
+        send_personal(emails(args.to), "[ทดสอบ] ", "_test")
         return
 
     # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
@@ -467,10 +501,8 @@ def main():
     db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
                           "recipients": ",".join(recipients)}, returning=False)
     print(f"sent to {len(recipients)} recipient(s)")
-    if loop_to and weekly:  # Tue-Fri the trial version is the same as the team's, so no second copy
-        body, rows, outcomes, xlsx = make(loop=True, suffix="_trial")
-        send(subject(rows, outcomes, "[ทดลอง Lead Loop] "), body, xlsx, loop_to)
-        print(f"trial version sent to {len(loop_to)} recipient(s)")
+    if loop_to:  # every day: the trial copy carries the status buttons
+        send_personal(loop_to, "[ทดลอง Lead Loop] ", "_trial")
 
 
 if __name__ == "__main__":

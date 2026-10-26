@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>KG Lead Loop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<!-- config.js is written at deploy time (.github/workflows/pages.yml): window.EGP_API = "<function url>" -->
+<script src="config.js"></script>
+<style>
+/* KG Lead Loop web app: the board (all leads) and one lead (status + history). Opened from personal links
+   in the morning email: #t=<token> for the board, #t=<token>&lead=<key> for one lead. */
+:root {
+  --bg: #f3f5f6; --surface: #ffffff; --ink: #17232b; --muted: #5b6b74; --line: #d6dde1;
+  --accent: #0b6e69; --accent-soft: #dcefed; --on-accent: #ffffff;
+  --good: #1f7a3a; --good-soft: #def2e3; --warn: #9a6400; --warn-soft: #fbf0d4; --bad: #b3261e; --bad-soft: #fbe1df;
+  --display: "Bai Jamjuree", "IBM Plex Sans Thai", Tahoma, sans-serif;
+  --body: "IBM Plex Sans Thai", Tahoma, "Leelawadee UI", sans-serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f171c; --surface: #17222a; --ink: #e6edf0; --muted: #9aabb4; --line: #2b3a43;
+  --accent: #4cc2b9; --accent-soft: #163a39; --on-accent: #0f171c;
+  --good: #6fd08a; --good-soft: #17331f; --warn: #e6b65a; --warn-soft: #362a12; --bad: #f08a83; --bad-soft: #3a1b19;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+h1 { font-family: var(--display); font-size: 24px; margin: 0; }
+h2 { font-family: var(--display); font-size: 19px; margin: 0; line-height: 1.35; text-wrap: balance; }
+h3 { font-family: var(--display); font-size: 15px; margin: 0; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.who { font-size: 13px; color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: inherit; font-size: 13px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip.reason[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input.txt, textarea, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+input.txt { min-width: 0; flex: 1 1 220px; }
+textarea { width: 100%; resize: vertical; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.list { display: grid; gap: 8px; }
+.row { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; cursor: pointer; text-decoration: none; color: inherit; }
+.row:hover { border-color: var(--accent); }
+.row .t { font-weight: 600; min-width: 0; }
+.row .side { display: grid; gap: 4px; justify-items: end; align-content: start; }
+.meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 9px;
+  border-radius: 999px; white-space: nowrap; background: var(--bg); color: var(--muted); }
+.pill.st { background: var(--warn-soft); color: var(--warn); }
+.pill.done { background: var(--accent-soft); color: var(--accent); }
+.pill.win { background: var(--good-soft); color: var(--good); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.urgent { color: var(--bad); font-weight: 600; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { font: inherit; font-size: 14px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn:disabled { opacity: .6; cursor: default; }
+.group { display: grid; gap: 6px; }
+.group > span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.msg { font-size: 14px; min-height: 1.4em; }
+.msg.ok { color: var(--good); } .msg.err { color: var(--bad); }
+.timeline { display: grid; gap: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
+.timeline .when { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.anns { display: grid; gap: 10px; }
+.ann { display: grid; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ann:last-child { border-bottom: 0; padding-bottom: 0; }
+pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--body); font-size: 14px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .two { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } .row .side { justify-items: start; } }
+.empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>KG Lead Loop</h1>
+    <span class="who" id="who"></span>
+  </header>
+  <main id="app"><div class="card empty">กำลังโหลด…</div></main>
+</div>
+
+<script>
+(() => {
+  const STATUS = {
+    received: "👀 รับเรื่อง", contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer",
+    mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ",
+  };
+  const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]],
+                  ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
+  const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
+  const TYPE = { P0: "แผนจัดซื้อ", B0: "ร่าง TOR", "15": "ราคากลาง", D0: "ประกาศเชิญชวน", W0: "ประกาศผู้ชนะ",
+                 D1: "ยกเลิกประกาศ", D2: "แก้ไขประกาศ", W1: "ยกเลิกผู้ชนะ", W2: "แก้ไขผู้ชนะ" };
+  const OUTCOME = { win: ["🏆 OfficeMate ชนะ", "win"], lost: ["แพ้", "bad"], missed: ["หลุด · บริษัทอื่นชนะ", "bad"],
+                    other_won: ["บริษัทอื่นชนะ", "bad"], cancelled: ["ยกเลิกโครงการ", ""] };
+  const app = document.getElementById("app");
+  const who = document.getElementById("who");
+
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const money = v => v === null || v === undefined || v === "" ? "–" : Number(v).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  const thDate = d => { if (!d) return "–"; const x = new Date(d); return x.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit" }); };
+  const thTime = d => new Date(d).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const daysTo = d => d ? Math.round((new Date(d + "T00:00:00") - new Date(new Date().toDateString())) / 864e5) : null;
+  const monthLabel = m => { if (!m) return ""; const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("th-TH", { month: "short", year: "numeric" }); };
+
+  function params() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    return { t: p.get("t") || "", lead: p.get("lead") || "" };
+  }
+  function go(lead) {
+    const p = new URLSearchParams({ t: params().t });
+    if (lead) p.set("lead", lead);
+    location.hash = p.toString();
+  }
+
+  async function api(action, extra = {}) {
+    if (!window.EGP_API) throw new Error("ยังไม่ได้ตั้งค่าที่อยู่ของระบบ ติดต่อผู้ดูแลระบบ");
+    const res = await fetch(window.EGP_API, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: params().t, action, ...extra }) });
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* handled below */ }
+    if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
+    return data;
+  }
+
+  function fail(e) {
+    app.innerHTML = `<div class="card empty">${esc(e.message)}</div>`;
+  }
+
+  function statusPill(s, by, at) {
+    if (!s) return '<span class="pill">ยังไม่มีสถานะ</span>';
+    const cls = s === "bid" ? "done" : s === "no_bid" ? "bad" : "st";
+    return `<span class="pill ${cls}">${esc(STATUS[s] || s)}</span>` +
+      (at ? `<span class="small muted">${esc(by || "")} · ${esc(thTime(at))}</span>` : "");
+  }
+  function outcomePill(o) {
+    if (!o || !OUTCOME[o]) return "";
+    return `<span class="pill ${OUTCOME[o][1]}">${esc(OUTCOME[o][0])}</span>`;
+  }
+
+  // ---------- board ----------
+  const FILTERS = [
+    ["all", "ทั้งหมด", () => true],
+    ["none", "ยังไม่มีสถานะ", l => !l.status],
+    ["doing", "กำลังทำ", l => ["received", "contacted", "sent_to_mer", "mer_replied", "other"].includes(l.status)],
+    ["bid", "ยื่นแล้ว", l => l.status === "bid"],
+    ["no_bid", "ไม่ยื่น", l => l.status === "no_bid"],
+    ["result", "มีผลแล้ว", l => !!l.outcome],
+  ];
+  let board = { leads: [], filter: "all", q: "", days: 30 };
+
+  async function showBoard() {
+    app.innerHTML = '<div class="card empty">กำลังโหลดรายการ…</div>';
+    try {
+      const data = await api("board", { days: board.days });
+      who.textContent = `${data.user.name} · ${data.user.role === "dv" ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+      board.leads = data.leads || [];
+      renderBoard();
+    } catch (e) { fail(e); }
+  }
+
+  function renderBoard() {
+    const q = board.q.trim().toLowerCase();
+    const fn = FILTERS.find(f => f[0] === board.filter)[2];
+    const rows = board.leads.filter(fn).filter(l => !q ||
+      `${l.title} ${l.dept_name} ${l.province || ""} ${l.lead_key}`.toLowerCase().includes(q));
+    // bids closing soon first, then the newest
+    rows.sort((a, b) => {
+      const da = daysTo(a.bid_date), db = daysTo(b.bid_date);
+      const ua = da !== null && da >= 0 ? da : 9999, ub = db !== null && db >= 0 ? db : 9999;
+      return ua - ub || new Date(b.first_seen_at) - new Date(a.first_seen_at);
+    });
+    const chips = FILTERS.map(([k, label, f]) =>
+      `<button class="chip" type="button" data-f="${k}" aria-pressed="${board.filter === k}">${label} ${board.leads.filter(f).length}</button>`).join("");
+    const list = rows.map(l => {
+      const left = daysTo(l.bid_date);
+      const bid = l.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(l.bid_date))}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : ""}</span>` : "";
+      const types = (l.types || []).map(t => TYPE[t] || t).join(", ");
+      return `<a class="row" href="#${new URLSearchParams({ t: params().t, lead: l.lead_key })}">
+        <div><div class="t">${esc(l.title)}</div>
+          <div class="meta"><span>${esc(l.dept_name)}</span><span>${esc(l.province || "ไม่ระบุจังหวัด")}</span>
+          <span>งบ ${money(l.budget_thb)}</span><span>${esc(types)}</span>${bid}</div></div>
+        <div class="side">${statusPill(l.status, l.status_by, l.status_at)}${outcomePill(l.outcome)}</div></a>`;
+    }).join("");
+    app.innerHTML = `<div class="card">
+        <div class="chips" role="group" aria-label="กรองตามสถานะ">${chips}</div>
+        <div class="tools">
+          <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด" value="${esc(board.q)}" aria-label="ค้นหา">
+          <select id="days" aria-label="ช่วงเวลา">${[30, 60, 90].map(d => `<option value="${d}" ${d === board.days ? "selected" : ""}>${d} วันล่าสุด</option>`).join("")}</select>
+        </div>
+        <div class="small muted">Lead ที่ส่งในอีเมลเช้า (คะแนน ≥ 50, จังหวัดเป้าหมายและไม่ระบุจังหวัด) แสดง ${rows.length} จาก ${board.leads.length} รายการ</div>
+      </div>
+      <div class="list" style="margin-top:12px">${list || '<div class="card empty">ไม่มีรายการตามตัวกรองนี้</div>'}</div>`;
+    app.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { board.filter = b.dataset.f; renderBoard(); }));
+    const qi = document.getElementById("q");
+    qi.addEventListener("input", () => { board.q = qi.value; const pos = qi.selectionStart; renderBoard();
+      const n = document.getElementById("q"); n.focus(); n.setSelectionRange(pos, pos); });
+    document.getElementById("days").addEventListener("change", e => { board.days = Number(e.target.value); showBoard(); });
+  }
+
+  // ---------- one lead ----------
+  let current = null;
+
+  async function showLead(key) {
+    app.innerHTML = '<div class="card empty">กำลังโหลด Lead…</div>';
+    try {
+      const data = await api("lead", { key });
+      who.textContent = `${data.user.name} · ${data.user.role === "dv" ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+      current = { key, data, status: null, reasons: new Set() };
+      renderLead();
+    } catch (e) { fail(e); }
+  }
+
+  function leadSummary(anns) {
+    const order = ["D0", "B0", "15", "P0"];
+    const main = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))
+      .find(a => order.includes(a.type)) || anns[0];
+    const pick = k => anns.map(a => a[k]).filter(v => v !== null && v !== undefined && v !== "");
+    const budget = Math.max(...pick("budget_thb").map(Number), -1);
+    const d0 = anns.find(a => a.type === "D0" && a.bid_date);
+    const w0 = [...anns].reverse().find(a => a.type === "W0" && Array.isArray(a.winners) && a.winners.length);
+    const tor = anns.find(a => a.type === "B0") || anns.find(a => a.type === "D0") || main;
+    return { main, budget: budget >= 0 ? budget : null, d0, w0, tor, province: pick("province")[0] || "",
+             plan: anns.find(a => a.type === "P0") };
+  }
+
+  function merText(s) {
+    const m = s.main;
+    const ref = m.project_no ? `e-GP ${m.project_no}` : `แผน ${m.plan_no}`;
+    const lines = [`[ขอเช็คสินค้า] ${ref}`, m.title,
+      `หน่วยงาน: ${m.dept_name}${s.province ? ` (${s.province})` : ""}`];
+    const money2 = s.budget !== null ? `งบประมาณ: ${money(s.budget)} บาท` : "";
+    const bid = s.d0 ? `ยื่นซอง ${thDate(s.d0.bid_date)}${s.d0.bid_time ? " " + s.d0.bid_time : ""}` : "";
+    if (money2 || bid) lines.push([money2, bid].filter(Boolean).join(" · "));
+    lines.push("ขอ: ราคาทุน + สต็อก ภายใน ____", `เอกสาร/TOR: ${s.tor.link}`);
+    return lines.join("\n");
+  }
+
+  function renderLead() {
+    const { data } = current;
+    const anns = data.announcements;
+    const s = leadSummary(anns);
+    const isDV = data.user.role === "dv";
+    const events = data.events || [];
+    const last = events[events.length - 1];
+    const left = s.d0 ? daysTo(s.d0.bid_date) : null;
+    const outcome = s.w0
+      ? (s.w0.winners.join(", ").replace(/ํา/g, "ำ").match(/ออฟฟิศ\s*เมท/)
+        ? `<span class="pill win">🏆 OfficeMate ชนะ · ${money(s.w0.winner_price)} บาท</span>`
+        : `<span class="pill bad">ผู้ชนะ: ${esc(s.w0.winners.join(", "))} · ${money(s.w0.winner_price)} บาท</span>`)
+      : anns.some(a => a.type === "D1") ? '<span class="pill">ยกเลิกโครงการ</span>' : "";
+
+    const annList = anns.map(a => `<div class="ann">
+        <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
+        <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
+        <div class="meta">${a.budget_thb ? `<span>งบ ${money(a.budget_thb)}</span>` : ""}
+          ${a.bid_date ? `<span>ยื่นซอง ${esc(thDate(a.bid_date))} ${esc(a.bid_time || "")}</span>` : ""}
+          ${a.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(a.expected_month))}</span>` : ""}
+          ${Array.isArray(a.winners) && a.winners.length ? `<span>ผู้ชนะ ${esc(a.winners.join(", "))} · ${money(a.winner_price)}</span>` : ""}
+          ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("");
+
+    const form = isDV ? `<div class="card" id="form">
+        <h3>อัปเดตสถานะ</h3>
+        ${GROUPS.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="btns">
+          ${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}
+        </div></div>`).join("")}
+        <div class="group" id="reasons" ${current.status === "no_bid" ? "" : "hidden"}><span>เหตุผลที่ไม่ยื่น (เลือกได้หลายข้อ)</span>
+          <div class="chips">${REASONS.map(r => `<button class="chip reason" type="button" aria-pressed="${current.reasons.has(r)}">${r}</button>`).join("")}</div></div>
+        <label class="fld" id="pricebox" ${current.status === "bid" ? "" : "hidden"}>ราคาที่ยื่น (บาท) ไม่บังคับ
+          <input class="txt" id="price" inputmode="decimal" placeholder="เช่น 1,180,000"></label>
+        <label class="fld">หมายเหตุ <span id="notehint">${current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)"}</span>
+          <textarea id="note" rows="2" placeholder="เช่น นัดคุยฝ่ายพัสดุวันพฤหัส"></textarea></label>
+        <div class="btns"><button class="btn primary" type="button" id="save">บันทึก</button></div>
+        <div class="msg" id="msg" aria-live="polite"></div>
+      </div>` : "";
+
+    app.innerHTML = `
+      <div><a href="#${new URLSearchParams({ t: params().t })}">← กลับไปกระดาน Lead</a></div>
+      <div class="card">
+        <h2>${esc(s.main.title)}</h2>
+        <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
+          <span>งบ ${money(s.budget)} บาท</span>
+          ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : ""}</span>` : ""}
+          <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span></div>
+        <div class="btns">${statusPill(last && last.status, last && last.by, last && last.at)}${outcome}</div>
+      </div>
+      <div class="two" style="margin-top:12px">
+        <div style="display:grid;gap:12px">
+          ${form}
+          <div class="card"><h3>ประวัติ</h3>
+            <div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}</div>
+              <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + money(e.bid_price) + " บาท" : ""}</div>
+              ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
+        </div>
+        <div style="display:grid;gap:12px">
+          <div class="card"><h3>ข้อความส่งให้ Mer</h3>
+            <div class="small muted">คัดลอกไปวางใน LINE / Teams / Email แล้วกดสถานะ “ส่งให้ Mer”</div>
+            <pre class="mer" id="mertext">${esc(merText(s))}</pre>
+            <div class="btns"><button class="btn" type="button" id="copy">คัดลอกข้อความ</button></div>
+            <div class="msg" id="copymsg" aria-live="polite"></div></div>
+          <div class="card"><h3>ประกาศของโครงการนี้</h3><div class="anns">${annList}</div></div>
+        </div>
+      </div>`;
+
+    document.getElementById("copy").addEventListener("click", () => {
+      const el = document.getElementById("mertext"), cm = document.getElementById("copymsg");
+      const fallback = () => { const r = document.createRange(); r.selectNodeContents(el);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); cm.textContent = "เลือกข้อความให้แล้ว กด Ctrl+C เพื่อคัดลอก"; };
+      try { navigator.clipboard.writeText(el.textContent).then(() => { cm.className = "msg ok"; cm.textContent = "คัดลอกแล้ว"; }, fallback); }
+      catch (e) { fallback(); }
+    });
+    if (!isDV) return;
+
+    const form2 = document.getElementById("form");
+    form2.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => {
+      current.status = b.dataset.s;
+      form2.querySelectorAll("[data-s]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      document.getElementById("reasons").hidden = current.status !== "no_bid";
+      document.getElementById("pricebox").hidden = current.status !== "bid";
+      document.getElementById("notehint").textContent = current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)";
+      document.getElementById("msg").textContent = "";
+    }));
+    form2.querySelectorAll(".reason").forEach(c => c.addEventListener("click", () => {
+      const r = c.textContent;
+      if (current.reasons.has(r)) current.reasons.delete(r); else current.reasons.add(r);
+      c.setAttribute("aria-pressed", String(current.reasons.has(r)));
+    }));
+    document.getElementById("save").addEventListener("click", async () => {
+      const msg = document.getElementById("msg"), btn = document.getElementById("save");
+      const note = document.getElementById("note").value.trim();
+      const err = t => { msg.className = "msg err"; msg.textContent = t; };
+      if (!current.status) return err("เลือกสถานะก่อน แล้วกดบันทึก");
+      if (current.status === "no_bid" && !current.reasons.size) return err("เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ");
+      if (current.status === "other" && !note) return err("สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ");
+      btn.disabled = true; msg.className = "msg"; msg.textContent = "กำลังบันทึก…";
+      try {
+        const res = await api("save", { key: current.key, status: current.status, reasons: [...current.reasons],
+          bid_price: current.status === "bid" ? document.getElementById("price").value.trim() : null, note });
+        current.data.events = res.events;
+        current.status = null; current.reasons = new Set();
+        renderLead();
+        const m = document.getElementById("msg"); m.className = "msg ok"; m.textContent = "บันทึกแล้ว";
+      } catch (e) { btn.disabled = false; err(e.message); }
+    });
+  }
+
+  function route() {
+    const { t, lead } = params();
+    if (!/^[0-9a-f]{64}$/.test(t)) {
+      app.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์กระดาน Lead ในอีเมล e-GP Alert</div>';
+      return;
+    }
+    if (lead) showLead(lead); else showBoard();
+    window.scrollTo(0, 0);
+  }
+  addEventListener("hashchange", route);
+  route();
+})();
+</script>
+</body>
+</html>

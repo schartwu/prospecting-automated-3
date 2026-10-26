@@ -1,0 +1,41 @@
+name: Lead web app
+
+# Publishes web/ (KG Lead Loop: lead board + lead page) to GitHub Pages. The page itself holds no data;
+# it calls the Supabase Edge Function `lead`, which checks each person's link token.
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: |
+          mkdir _site
+          cp -r web/. _site/
+          # The function URL is kept out of the repository and written in at deploy time.
+          printf 'window.EGP_API = "%s/functions/v1/lead";\n' "${SUPABASE_URL%/}" > _site/config.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

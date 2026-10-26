@@ -1,0 +1,100 @@
+// KG Lead Loop API for the web app (web/index.html on GitHub Pages).
+//
+// Every call is POST {token, action, ...}. The token is the person's own link (lead_users.token), so the
+// function checks it itself instead of a Supabase login (deployed with verify_jwt = false).
+//   me     -> {name, role}
+//   board  -> leads of the last `days` days in Sales' provinces, with latest status and e-GP outcome
+//   lead   -> {announcements, events} of one lead
+//   save   -> add one status (Division Manager only)
+import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+
+const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
+  auth: { persistSession: false },
+});
+
+// Same list as DEFAULT_PROVINCES in scripts/digest.py; TARGET_PROVINCES (function secret) overrides it.
+const PROVINCES = (Deno.env.get("TARGET_PROVINCES") ??
+  "กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, " +
+    "พระนครศรีอยุธยา, สระบุรี, นครนายก, ปราจีนบุรี, ฉะเชิงเทรา, ชลบุรี, ระยอง, จันทบุรี")
+  .split(",").map((p) => p.trim()).filter(Boolean);
+
+const STATUSES = ["received", "contacted", "sent_to_mer", "mer_replied", "bid", "no_bid", "other"];
+const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function reply(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  if (req.method !== "POST") return reply({ error: "ใช้ POST เท่านั้น" }, 405);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return reply({ error: "รูปแบบคำขอไม่ถูกต้อง" }, 400);
+  }
+  const token = typeof body.token === "string" ? body.token : "";
+  if (!/^[0-9a-f]{64}$/.test(token)) return reply({ error: "ลิงก์ไม่ถูกต้อง" }, 401);
+
+  const { data: user, error: userErr } = await db.from("lead_users")
+    .select("id, name, role").eq("token", token).eq("active", true).maybeSingle();
+  if (userErr) return reply({ error: "ระบบขัดข้อง ลองใหม่อีกครั้ง" }, 500);
+  if (!user) return reply({ error: "ลิงก์นี้ใช้ไม่ได้แล้ว ติดต่อผู้ดูแลระบบ" }, 401);
+
+  switch (body.action) {
+    case "me":
+      return reply({ name: user.name, role: user.role });
+
+    case "board": {
+      const days = Math.min(Math.max(Number(body.days) || 30, 1), 120);
+      const { data, error } = await db.rpc("lead_board", { p_days: days, p_provinces: PROVINCES });
+      if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      return reply({ user: { name: user.name, role: user.role }, leads: data });
+    }
+
+    case "lead": {
+      const key = String(body.key ?? "");
+      if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      const { data, error } = await db.rpc("lead_detail", { p_key: key });
+      if (error) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
+      if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      return reply({ user: { name: user.name, role: user.role }, ...data });
+    }
+
+    case "save": {
+      if (user.role !== "dv") return reply({ error: "บัญชีนี้ดูได้อย่างเดียว" }, 403);
+      const key = String(body.key ?? "");
+      const status = String(body.status ?? "");
+      const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).filter((r) => REASONS.includes(r)) : [];
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : "";
+      const price = body.bid_price === null || body.bid_price === undefined || body.bid_price === ""
+        ? null : Number(String(body.bid_price).replace(/,/g, ""));
+      if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      if (!STATUSES.includes(status)) return reply({ error: "เลือกสถานะก่อนกดบันทึก" }, 400);
+      if (status === "no_bid" && !reasons.length) return reply({ error: "เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ" }, 400);
+      if (status === "other" && !note) return reply({ error: "สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ" }, 400);
+      if (price !== null && !(price >= 0)) return reply({ error: "ราคาที่ยื่นต้องเป็นตัวเลข" }, 400);
+      const { error } = await db.from("lead_events").insert({
+        lead_key: key, status, reasons: status === "no_bid" ? reasons : [],
+        bid_price: status === "bid" ? price : null, note: note || null, user_id: user.id,
+      });
+      if (error) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
+      const { data } = await db.rpc("lead_detail", { p_key: key });
+      return reply({ saved: true, events: data?.events ?? [] });
+    }
+
+    default:
+      return reply({ error: "ไม่รู้จักคำสั่งนี้" }, 400);
+  }
+});
