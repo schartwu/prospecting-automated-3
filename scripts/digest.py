@@ -240,11 +240,12 @@ def outcomes_html(rows, targets):
     return "\n".join(out), sheet
 
 
-def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str]):
+def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str],
+          with_outcomes: bool = True):
     """Returns (email html, rows in the email, rows clearly in other provinces, Monday outcome rows)."""
     today = now.date()
     parts, all_rows, elsewhere, outcome_rows = [], [], [], []
-    if weekly:
+    if weekly and with_outcomes:
         rows = db.rpc("outcome_items", {"p_since": (now - timedelta(days=7)).isoformat()})
         section, outcome_rows = outcomes_html(rows, targets)
         parts.append(section)
@@ -414,20 +415,22 @@ def main():
     weekly = now.weekday() == 0 if args.weekly == "auto" else args.weekly == "yes"
 
     targets = provinces.parse_targets(os.environ.get("TARGET_PROVINCES") or DEFAULT_PROVINCES)
-    body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets)
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
-    xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}.xlsx")
-    write_xlsx(rows, xlsx, elsewhere, outcomes)
-    with open(os.path.join(out, "digest_preview.html"), "w", encoding="utf-8") as f:
-        f.write(body)
-    print(f"digest since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items "
-          f"(+{len(elsewhere)} in other provinces) -> {out}")
 
-    if args.send:
-        # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
-        to = args.to or os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"]
-        recipients = [e.strip() for e in to.split(",") if e.strip()]
+    def make(loop: bool, suffix: str = ""):
+        """loop=True adds the KG Lead Loop parts (Monday outcomes). While those are on trial they go only
+        to LOOP_RECIPIENTS; the team's digest stays as it was."""
+        body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets, with_outcomes=loop)
+        xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}{suffix}.xlsx")
+        write_xlsx(rows, xlsx, elsewhere, outcomes)
+        with open(os.path.join(out, f"digest_preview{suffix}.html"), "w", encoding="utf-8") as f:
+            f.write(body)
+        print(f"digest{suffix} since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items "
+              f"(+{len(elsewhere)} in other provinces, {len(outcomes)} outcomes) -> {out}")
+        return body, rows, outcomes, xlsx
+
+    def subject(rows, outcomes, prefix=""):
         n_new = len(rows)
         weekly_headings = {h for _, h, _, when, _ in SECTIONS if when == "weekly"}
         n_daily = sum(r["section"] not in weekly_headings for r in rows)
@@ -438,15 +441,36 @@ def main():
         n_wins = sum(r["outcome"] == "OfficeMate ชนะ" for r in outcomes)
         if n_wins:
             weekly_note += f" · 🏆 OfficeMate ชนะ {n_wins}"
-        subject = (f"🚨 e-GP Alert {now:%d/%m/%Y}: ยื่นราคาได้ {n_bid} · เตรียมของ {n_prep} · "
-                   f"{f'แผนใหม่ {n_plan} · ' if n_plan else ''}"
-                   f"ใหม่รวม {n_daily} โครงการ{weekly_note}" if n_daily
-                   else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่{weekly_note}")
-        send(subject, body, xlsx, recipients)
-        if not args.to:  # test sends don't move the "since" window for the real digest
-            db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": n_new,
-                                  "recipients": ",".join(recipients)}, returning=False)
-        print(f"sent to {len(recipients)} recipient(s)")
+        return prefix + (f"🚨 e-GP Alert {now:%d/%m/%Y}: ยื่นราคาได้ {n_bid} · เตรียมของ {n_prep} · "
+                         f"{f'แผนใหม่ {n_plan} · ' if n_plan else ''}"
+                         f"ใหม่รวม {n_daily} โครงการ{weekly_note}" if n_daily
+                         else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่{weekly_note}")
+
+    def emails(value):
+        return [e.strip() for e in (value or "").split(",") if e.strip()]
+
+    loop_to = emails(os.environ.get("LOOP_RECIPIENTS"))
+    if not args.send:
+        make(loop=True)  # previews show everything, trial parts included
+        return
+
+    if args.to:  # a test send: the full version, and the "since" window of the real digest stays put
+        body, rows, outcomes, xlsx = make(loop=True)
+        send(subject(rows, outcomes, "[ทดสอบ] "), body, xlsx, emails(args.to))
+        print(f"test sent to {len(emails(args.to))} recipient(s)")
+        return
+
+    # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
+    recipients = emails(os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"])
+    body, rows, outcomes, xlsx = make(loop=not loop_to)
+    send(subject(rows, outcomes), body, xlsx, recipients)
+    db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
+                          "recipients": ",".join(recipients)}, returning=False)
+    print(f"sent to {len(recipients)} recipient(s)")
+    if loop_to:
+        body, rows, outcomes, xlsx = make(loop=True, suffix="_trial")
+        send(subject(rows, outcomes, "[ทดลอง Lead Loop] "), body, xlsx, loop_to)
+        print(f"trial version sent to {len(loop_to)} recipient(s)")
 
 
 if __name__ == "__main__":

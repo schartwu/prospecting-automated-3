@@ -29,6 +29,7 @@ jobs:
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           DIGEST_RECIPIENTS: ${{ vars.DIGEST_RECIPIENTS }}
           TARGET_PROVINCES: ${{ vars.TARGET_PROVINCES }}
+          LOOP_RECIPIENTS: ${{ vars.LOOP_RECIPIENTS }}
           ARGS: ${{ inputs.args }}
         run: python scripts/digest.py $ARGS
       - uses: actions/upload-artifact@v4
