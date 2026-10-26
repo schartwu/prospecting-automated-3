@@ -295,10 +295,12 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
             f'<div style="color:#666">ประกาศใหม่ที่เกี่ยวกับ OfficeMate ตั้งแต่ {since.astimezone(BKK):%d/%m %H:%M} น. '
             f'รวม {total} รายการ (คะแนน ≥ {min_score})<br>เฉพาะจังหวัด: {html.escape(", ".join(sorted(targets)))} '
             f'และประกาศที่ไม่ระบุจังหวัด (ส่วนใหญ่เป็นส่วนกลาง)'
-            + (f' · จังหวัดอื่น {len(elsewhere)} รายการอยู่ในแท็บ "จังหวัดอื่น" ของไฟล์ Excel' if elsewhere else '')
+            + (f' · จังหวัดอื่น {len(elsewhere)} รายการ'
+               + (' ดูในเว็บ KG Lead แท็บ "รายการ (จังหวัดอื่น)"' if board_link
+                  else ' อยู่ในแท็บ "รายการ (จังหวัดอื่น)" ของไฟล์ Excel') if elsewhere else '')
             + '</div>'
             + (f'<div style="margin-top:8px"><a href="{html.escape(board_link)}" style="color:#0b6e69;font-weight:bold">'
-               'เปิดกระดาน Lead (สถานะทุกรายการ) →</a></div>' if board_link else ''))
+               'เปิด KG Lead: รายการทั้งหมด ผลลัพธ์ และสถานะ (ย้อนดูได้ทุกวัน) →</a></div>' if board_link else ''))
     bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
     foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
             f'{html.escape(bands)}<br>งบ = ราคากลางจากเอกสารประกาศ · ไฟล์ Excel แนบมีรายการทั้งหมดและแท็บคำอธิบาย '
@@ -344,7 +346,7 @@ def write_xlsx(rows, path, elsewhere=(), outcomes=()):
                for k, v in TYPE_MEANING.items()]
               + [{"หัวข้อ": "คะแนน", "ค่า": b, "ความหมาย": d} for b, d in SCORE_BANDS]
               + [{"หัวข้อ": "คอลัมน์", "ค่า": k, "ความหมาย": v} for k, v in columns_help])
-    sheets = [("รายการ", rows)] + ([("จังหวัดอื่น", elsewhere)] if elsewhere else [])
+    sheets = [("รายการ (กทม. และปริมณฑล)", rows)] + ([("รายการ (จังหวัดอื่น)", elsewhere)] if elsewhere else [])
     with pd.ExcelWriter(path) as xw:
         if outcomes:  # Mondays: results first, it is the headline of the week
             pd.DataFrame(list(outcomes), columns=list(OUTCOME_COLS)).rename(columns=OUTCOME_COLS).to_excel(
@@ -404,10 +406,11 @@ def send(subject, html_body, attachment, recipients):
     msg["Subject"] = subject
     msg.set_content("กรุณาเปิดอีเมลนี้ในโหมด HTML")
     msg.add_alternative(html_body, subtype="html")
-    with open(attachment, "rb") as f:
-        msg.add_attachment(f.read(), maintype="application",
-                           subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                           filename=os.path.basename(attachment))
+    if attachment:  # the Lead Loop trial copy has none: its lists are on the web app
+        with open(attachment, "rb") as f:
+            msg.add_attachment(f.read(), maintype="application",
+                               subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               filename=os.path.basename(attachment))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(os.environ["SENDER_EMAIL"], os.environ["SENDER_PASSWORD"])
         smtp.send_message(msg)
@@ -481,8 +484,11 @@ def main():
 
     def send_personal(to, prefix, suffix):
         for i, email in enumerate(to):
-            body, rows, outcomes, xlsx = make(loop=True, suffix=f"{suffix}{i}", token=token_of(email))
-            send(subject(rows, outcomes, prefix), body, xlsx, [email])
+            token = token_of(email)
+            body, rows, outcomes, xlsx = make(loop=True, suffix=f"{suffix}{i}", token=token)
+            if token is None:
+                print(f"::warning::{email} is not a Lead Loop user; sent without web links")
+            send(subject(rows, outcomes, prefix), body, None if token else xlsx, [email])
         print(f"{prefix.strip()} sent to {len(to)} recipient(s)")
 
     loop_to = emails(os.environ.get("LOOP_RECIPIENTS"))

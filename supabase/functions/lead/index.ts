@@ -56,6 +56,25 @@ Deno.serve(async (req) => {
     case "me":
       return reply({ name: user.name, role: user.role });
 
+    case "items":
+    case "outcomes": {
+      // The former Excel tabs, by morning-email day. Ranges are capped at 92 days to keep answers quick.
+      const from = String(body.from ?? ""), to = String(body.to ?? "");
+      const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
+      if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
+      if ((Date.parse(to) - Date.parse(from)) / 864e5 > 92) return reply({ error: "เลือกช่วงได้ไม่เกิน 3 เดือน" }, 400);
+      const fn = body.action === "items" ? "web_items" : "web_outcomes";
+      const { data, error } = await db.rpc(fn, { p_from: from, p_to: to });
+      if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
+    }
+
+    case "days": {
+      const { data, error } = await db.rpc("web_email_days");
+      if (error) return reply({ error: "โหลดปฏิทินไม่สำเร็จ" }, 500);
+      return reply({ user: { name: user.name, role: user.role }, days: data });
+    }
+
     case "board": {
       const days = Math.min(Math.max(Number(body.days) || 30, 1), 120);
       const { data, error } = await db.rpc("lead_board", { p_days: days, p_provinces: PROVINCES });
