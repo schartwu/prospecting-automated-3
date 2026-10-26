@@ -467,7 +467,7 @@ def main():
     db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
                           "recipients": ",".join(recipients)}, returning=False)
     print(f"sent to {len(recipients)} recipient(s)")
-    if loop_to:
+    if loop_to and weekly:  # Tue-Fri the trial version is the same as the team's, so no second copy
         body, rows, outcomes, xlsx = make(loop=True, suffix="_trial")
         send(subject(rows, outcomes, "[ทดลอง Lead Loop] "), body, xlsx, loop_to)
         print(f"trial version sent to {len(loop_to)} recipient(s)")
