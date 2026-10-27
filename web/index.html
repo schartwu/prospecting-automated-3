@@ -114,6 +114,7 @@ a.kpi:hover { border-color: var(--accent); }
 .kpi.win { border-color: var(--good); }
 tr.warn td { background: var(--bad-soft); }
 tr.total td { font-weight: 500; border-top: 2px solid var(--line); }
+tr.plan td { border-top: 10px solid transparent; }
 .who-by { font-weight: 500; color: var(--ink); }
 button.kpi { font: inherit; text-align: left; cursor: pointer; }
 button.kpi:hover { border-color: var(--accent); }
@@ -320,7 +321,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // day of the latest status update.
   const state = {
     user: null, provinces: [], days: [], area: "target",
-    per: { leads: { preset: "last" }, tracking: { preset: "30" }, results: { preset: "month" }, overview: { preset: "month" } },
+    per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" } },
     cache: {}, leads: null, outcomes: null, tracking: null,
     l: { type: "D0", status: "all", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
@@ -354,7 +355,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   // One row per project. Its announcements (ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) fold into the latest one,
-  // so a project is counted once and its budget once. Plans (P0) have their own key and stay apart.
+  // so a project is counted once and its budget once. A plan (P0) joins its project when the database matched
+  // them (plan_links: same agency, same budget to the baht, one-to-one); otherwise it stays apart.
   const STAGE = { P0: 0, B0: 1, "15": 2, D0: 3 };
   function groupLeads(rows) {
     const by = new Map();
@@ -362,7 +364,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     return [...by.values()].map(rs => {
       rs.sort((a, b) => STAGE[a.type] - STAGE[b.type] || String(a.pub_date).localeCompare(String(b.pub_date)));
       const top = rs[rs.length - 1], seen = new Set();
-      return { ...top, score: Math.max(...rs.map(r => r.score)),
+      return { ...top, score: Math.max(...rs.map(r => r.score)), linked_plan: rs.map(r => r.linked_plan).find(Boolean) || null,
         budget_thb: num(top.budget_thb) !== null ? top.budget_thb : (rs.find(r => num(r.budget_thb) !== null) || {}).budget_thb ?? null,
         stages: [...rs].reverse().filter(r => !seen.has(r.type) && seen.add(r.type)).reverse().map(r => ({ type: r.type, pub_date: r.pub_date })) };
     });
@@ -442,6 +444,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div style="display:grid;gap:5px;min-width:0">
         <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${scoreBadge(r.score)}${statusPill(r.status, r.status_by, r.status_at)}${resultPill(r.result)}
           ${missed(r) ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : ""}
+          ${r.linked_plan && r.type !== "P0" ? `<span class="pill" title="หน่วยงานเดียวกันและงบเท่ากันพอดี">🔗 จับคู่กับแผน ${esc(r.linked_plan)}</span>` : ""}
           ${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}${r.amended ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
@@ -462,7 +465,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["D0", "15", "B0", "P0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
+    const byType = ["D0", "15", "B0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
+    const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
     const letGo = leads.filter(missed);
     const funnel = [["Lead ทั้งหมด", leads.length], ["มีสถานะแล้ว", leads.filter(r => r.status).length],
       ["ส่งให้ Mer", leads.filter(r => ["sent_to_mer", "mer_replied", "bid"].includes(r.status)).length],
@@ -491,7 +495,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
           <div class="tbl"><table><thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
           ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview" })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (ไม่รวมที่เลยวันยื่นซองโดยไม่มีใครอัปเดต)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
           <tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview" })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>
-          <tr class="total"><td>รวม</td><td class="num">${leads.length}</td><td class="num money">${short(sum(leads, "budget_thb"))}</td></tr>
+          <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
+          <tr class="plan"><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview" })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
           </tbody></table></div></div>
         </div>
       </div>`;
@@ -546,7 +551,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
       "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : missed(r) ? "เลยวันยื่นซอง ไม่มีใครอัปเดต" : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
       "ผู้ชนะ": r.winners || "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "",
-      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || "", "ลิงก์": r.link })));
+      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์": r.link })));
   }
 
   // ---------------- ติดตามสถานะ ----------------
@@ -687,13 +692,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     main.innerHTML = `<div class="grid2">
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
         <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
-        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: 30 วัน</dd>
+        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
         <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>
         <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
         <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
-        <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd></dl></div>
+        <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd>
+        <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd></dl></div>
       <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
         <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
         <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
@@ -709,7 +715,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>`;
     try {
       const data = await api("lead", { key });
-      current = { key, from: from || "leads", data, status: null, reasons: new Set() };
+      current = { key: data.lead_key || key, from: from || "leads", data, status: null, reasons: new Set() };
       renderLead();
     } catch (e) { main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="card empty error">${esc(e.message)}</div>`; }
   }
@@ -746,7 +752,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
           <h1>${esc(s.main.title)}</h1>
           <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
             ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · ${dueText(s.d0.bid_date)}` : ""}</span>` : ""}
-            <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span></div>
+            <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span>
+            ${data.linked_plan ? `<span>🔗 จับคู่กับแผน ${esc(data.linked_plan)}</span>` : ""}</div>
         </div>
         <div><div class="small muted amt-label">งบประมาณ</div><div class="amt">${s.budget === null ? '<span class="muted" style="font-size:16px">ไม่ระบุงบ</span>' : baht(s.budget)}</div></div>
       </div>
