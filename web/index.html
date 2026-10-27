@@ -462,7 +462,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["D0", "B0", "15", "P0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
+    const byType = ["D0", "15", "B0", "P0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
     const letGo = leads.filter(missed);
     const funnel = [["Lead ทั้งหมด", leads.length], ["มีสถานะแล้ว", leads.filter(r => r.status).length],
       ["ส่งให้ Mer", leads.filter(r => ["sent_to_mer", "mer_replied", "bid"].includes(r.status)).length],
