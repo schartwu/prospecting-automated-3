@@ -112,6 +112,15 @@ a.kpi:hover { border-color: var(--accent); }
 .kpi .value { font-size: 28px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .kpi .sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .kpi.win { border-color: var(--good); }
+button.kpi { font: inherit; text-align: left; cursor: pointer; }
+button.kpi:hover { border-color: var(--accent); }
+button.kpi[aria-expanded="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.kpi .hint { font-size: 12px; color: var(--accent); margin-top: 2px; }
+.card.detail { border-color: var(--accent); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--soft); }
+tr.clickable[aria-expanded="true"] td { background: var(--accent-soft); }
+tr.sub td { background: var(--soft); }
 .kpi.win .value { color: var(--good); }
 .kpi.alert .value { color: var(--warn); }
 
@@ -208,8 +217,6 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .timeline .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ann { display: grid; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .ann:last-child { border-bottom: 0; padding-bottom: 0; }
-pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size: 14px; background: var(--soft);
-  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .legend dt { font-weight: 500; }
 .legend dd { margin: 0 0 8px; color: var(--muted); }
 .empty { padding: 26px 16px; text-align: center; color: var(--muted); }
@@ -415,7 +422,7 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
   function overview(body) {
     const leads = state.leads.filter(areaOk);
     const outs = state.outcomes.filter(o => o.kind === "result");
-    const wins = outs.filter(o => o.ours);                        // our wins count everywhere
+    const wins = outs.filter(o => o.ours && areaOk(o));
     const noStatus = leads.filter(r => !r.status);
     const bid = leads.filter(r => r.status === "bid");
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
@@ -435,7 +442,7 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
         <a class="kpi" href="${href({ v: "leads" })}"><span class="label">Lead ในช่วงนี้</span><span class="value">${leads.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(leads, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", status: "none" })}"><span class="label">ยังไม่มีสถานะ</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
-        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (ทุกจังหวัด)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
+        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
@@ -532,49 +539,77 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
   // ---------------- ผลลัพธ์ ----------------
   function results(body, redraw) {
     const R = state.r;
-    const outs = state.outcomes;
+    const outs = state.outcomes.filter(areaOk);
     const res = outs.filter(o => o.kind === "result");
-    const wins = res.filter(o => o.ours).sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
-    const leadRes = res.filter(o => o.lead_types && areaOk(o));
-    const lost = leadRes.filter(o => !o.ours).sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
-    const cancelled = outs.filter(o => o.kind === "cancelled" && areaOk(o));
+    const byPrice = (a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0);
+    const wins = res.filter(o => o.ours).sort(byPrice);
+    const leadRes = res.filter(o => o.lead_types).sort(byPrice);
+    const lost = leadRes.filter(o => !o.ours);
+    const cancelled = outs.filter(o => o.kind === "cancelled");
     const rivals = {};
-    res.filter(o => !o.ours && areaOk(o) && o.winners).forEach(o => { const r = rivals[o.winners] || (rivals[o.winners] = { n: 0, v: 0 }); r.n++; r.v += num(o.winner_price) || 0; });
+    res.filter(o => !o.ours && o.winners).forEach(o => { const r = rivals[o.winners] || (rivals[o.winners] = { n: 0, v: 0, rows: [] }); r.n++; r.v += num(o.winner_price) || 0; r.rows.push(o); });
     const top = Object.entries(rivals).sort((a, b) => b[1].n - a[1].n || b[1].v - a[1].v).slice(0, 10);
     const q = R.q.trim().toLowerCase();
-    const all = res.filter(areaOk).filter(o => !q || `${o.title} ${o.dept_name} ${o.winners} ${o.province || ""}`.toLowerCase().includes(q))
-      .sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
+    const all = res.filter(o => !q || `${o.title} ${o.dept_name} ${o.winners} ${o.province || ""}`.toLowerCase().includes(q)).sort(byPrice);
     const proj = o => `<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.title)}</a>`;
     const where = o => `${esc(o.dept_name || "")}<div class="small muted">${esc(o.province || "ไม่ระบุจังหวัด")}</div>`;
+    const winner = o => isOurs(o.winners) ? '<span class="pill win">🏆 OfficeMate</span>' : esc(o.winners || "–");
     const table = (head, rows) => rows.length ? `<div class="tbl"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`
       : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>';
+
+    // What each tile opens. The open list sits right under the tiles.
+    const DETAIL = {
+      wins: ["🏆 OfficeMate ชนะ", "รวมงานที่ไม่ได้มาจาก Lead (เช่น เฉพาะเจาะจง)", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"],
+        wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
+          <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี</span>'}</td></tr>`))],
+      leadres: ["Lead ที่ประกาศผลแล้ว", "โครงการที่เคยส่งเป็น Lead (ร่าง TOR / ราคากลาง / ประกาศเชิญชวน) และประกาศผู้ชนะแล้ว", () => table(["โครงการ", "ผล", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
+        leadRes.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td>
+          <td>${o.ours ? '<span class="pill win">เราชนะ</span>' : '<span class="pill bad">บริษัทอื่นชนะ</span>'}</td><td>${winner(o)}</td>
+          <td class="num money">${baht(o.winner_price)}</td><td class="num">${baht(o.budget_thb)}</td></tr>`))],
+      lost: ["Lead ที่บริษัทอื่นชนะ", "ใครชนะ ด้วยราคาเท่าไร เทียบกับงบ", () => table(["โครงการ", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
+        lost.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td><td>${winner(o)}</td>
+          <td class="num money">${baht(o.winner_price)}</td><td class="num">${baht(o.budget_thb)}</td></tr>`))],
+      cancelled: ["Lead ถูกยกเลิก", "มีประกาศยกเลิก (D1) ของโครงการที่เคยส่งเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "งบ"],
+        cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))],
+    };
+    const tile = (k, cls, label, value, sub) => `<button type="button" class="kpi ${cls}" data-detail="${k}" aria-expanded="${R.open === k}">
+      <span class="label">${label}</span><span class="value">${value}</span><span class="sub">${sub}</span><span class="hint">${R.open === k ? "ซ่อนรายการ ▲" : "ดูรายการ ▼"}</span></button>`;
+    const open = R.open && DETAIL[R.open];
+    const rivalRows = top.map(([n, r]) => `<tr class="clickable" data-rival="${esc(n)}" aria-expanded="${R.rival === n}"><td>${R.rival === n ? "▾" : "▸"} ${esc(n)}</td><td class="num">${r.n}</td><td class="num money">${short(r.v)}</td></tr>`
+      + (R.rival === n ? `<tr class="sub"><td colspan="3"><div class="small muted" style="margin-bottom:4px">โครงการที่ ${esc(n)} ชนะในช่วงนี้</div>
+        ${r.rows.sort(byPrice).map(o => `<div class="mini"><span class="t">${proj(o)}</span><span class="amt">${baht(o.winner_price)}</span><span class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")} · ประกาศ ${esc(thDate(o.pub_date))}</span></div>`).join("")}</td></tr>` : ""));
     body.innerHTML = `
       <div class="kpis">
-        <div class="kpi win"><span class="label">OfficeMate ชนะ (ทุกจังหวัด)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${baht(sum(wins, "winner_price"))}</span></div>
-        <div class="kpi"><span class="label">Lead ที่ประกาศผลแล้ว</span><span class="value">${leadRes.length}</span><span class="sub">เราชนะ ${leadRes.filter(o => o.ours).length}</span></div>
-        <div class="kpi alert"><span class="label">Lead ที่บริษัทอื่นชนะ</span><span class="value">${lost.length}</span><span class="sub">มูลค่า ${short(sum(lost, "winner_price"))}</span></div>
-        <div class="kpi"><span class="label">Lead ถูกยกเลิก</span><span class="value">${cancelled.length}</span><span class="sub">ประกาศยกเลิก (D1)</span></div>
+        ${tile("wins", "win", "OfficeMate ชนะ", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`)}
+        ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
+        ${tile("lost", "alert", "Lead ที่บริษัทอื่นชนะ", lost.length, `มูลค่า ${short(sum(lost, "winner_price"))}`)}
+        ${tile("cancelled", "", "Lead ถูกยกเลิก", cancelled.length, "ประกาศยกเลิก (D1)")}
       </div>
-      <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">นับทุกจังหวัด รวมงานที่ไม่ได้มาจาก Lead</span></div>
-        ${table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"], wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
-          <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี (เช่น เฉพาะเจาะจง)</span>'}</td></tr>`))}</div>
+      ${open ? `<div class="card detail" id="detail"><div class="section-head"><h2>${open[0]}</h2><span class="small muted">${open[1]}</span></div>${open[2]()}</div>` : ""}
       <div class="grid2">
-        <div class="card"><h2>Lead ที่บริษัทอื่นชนะ</h2>${table(["โครงการ", "ผู้ชนะ", "ราคาที่ชนะ"],
-          lost.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · งบ ${baht(o.budget_thb)}</div></td><td>${esc(o.winners)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}</div>
-        <div class="card"><h2>คู่แข่งที่ชนะบ่อย</h2>${table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม"],
-          top.map(([n, r]) => `<tr><td>${esc(n)}</td><td class="num">${r.n}</td><td class="num money">${short(r.v)}</td></tr>`))}</div>
+        <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">รวมงานที่ไม่ได้มาจาก Lead</span></div>
+          ${table(["โครงการ", "ราคาที่ชนะ"], wins.slice(0, 8).map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")}</div></td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
+          ${wins.length > 8 ? `<div><button class="btn sm" type="button" data-detail="wins">ดูทั้งหมด ${wins.length} รายการ</button></div>` : ""}</div>
+        <div class="card"><div class="section-head"><h2>คู่แข่งที่ชนะบ่อย</h2><span class="small muted">กดชื่อเพื่อดูโครงการที่ชนะ</span></div>
+          ${top.length ? table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม"], [rivalRows.join("")]) : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>'}</div>
       </div>
-      ${cancelled.length ? `<div class="card"><h2>Lead ที่ถูกยกเลิก</h2>${table(["โครงการ", "หน่วยงาน", "งบ"], cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))}</div>` : ""}
       <div class="card"><div class="section-head"><h2>ประกาศผู้ชนะทั้งหมด</h2><span class="small muted">${all.length.toLocaleString("th-TH")} รายการ · หมวดสินค้าของเรา (คะแนน ≥ 50)</span></div>
         <div class="toolrow"><input class="txt" id="rq" type="search" placeholder="ค้นหาโครงการ หน่วยงาน ผู้ชนะ" value="${esc(R.q)}" aria-label="ค้นหาผลผู้ชนะ">
           <button class="btn" type="button" id="dl">⬇ Excel</button></div>
         ${table(["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ"], all.slice(0, R.shown).map(o => `<tr><td>${proj(o)}<div class="small muted">ประกาศ ${esc(thDate(o.pub_date))}</div></td><td>${where(o)}</td>
-          <td>${isOurs(o.winners) ? '<span class="pill win">OfficeMate</span>' : esc(o.winners)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
+          <td>${winner(o)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
         ${all.length > R.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${all.length - R.shown})</button></div>` : ""}</div>`;
+    body.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => {
+      const k = b.dataset.detail;
+      R.open = R.open === k && b.classList.contains("kpi") ? null : k;
+      results(body, redraw);
+      if (R.open) document.getElementById("detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    body.querySelectorAll("[data-rival]").forEach(tr => tr.onclick = () => { R.rival = R.rival === tr.dataset.rival ? null : tr.dataset.rival; results(body, redraw); });
     const qi = document.getElementById("rq");
     qi.oninput = () => { R.q = qi.value; const p = qi.selectionStart; results(body, redraw); const n = document.getElementById("rq"); n.focus(); n.setSelectionRange(p, p); };
     const more = document.getElementById("more"); if (more) more.onclick = () => { R.shown += 100; results(body, redraw); };
-    document.getElementById("dl").onclick = () => download("ผลลัพธ์", outs.filter(areaOk).map(o => ({
+    document.getElementById("dl").onclick = () => download("ผลลัพธ์", outs.map(o => ({
       "วันที่ในอีเมล": o.email_date, "ผลลัพธ์": o.kind === "cancelled" ? "Lead ถูกยกเลิก" : o.ours ? "OfficeMate ชนะ" : o.lead_types ? "บริษัทอื่นชนะ (เคยเป็น Lead)" : "บริษัทอื่นชนะ",
       "ชื่อโครงการ": o.title, "หน่วยงาน": o.dept_name, "จังหวัด": o.province || "", "ผู้ชนะ": o.winners || "", "ราคาที่ชนะ (บาท)": num(o.winner_price) ?? "",
       "งบประมาณ (บาท)": num(o.budget_thb) ?? "", "เคยส่งเป็น Lead (ประเภท)": (o.lead_types || []).map(t => TYPE[t] || t).join(", "),
@@ -619,17 +654,7 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
     const budgets = anns.map(a => num(a.budget_thb)).filter(v => v !== null);
     return { main: main0, budget: budgets.length ? Math.max(...budgets) : null, d0: anns.find(a => a.type === "D0" && a.bid_date),
       w0: [...anns].reverse().find(a => a.type === "W0" && Array.isArray(a.winners) && a.winners.length),
-      tor: anns.find(a => a.type === "B0") || anns.find(a => a.type === "D0") || main0,
       province: anns.map(a => a.province).find(Boolean) || "" };
-  }
-
-  function merText(s) {
-    const m = s.main;
-    const lines = [`[ขอเช็คสินค้า] ${m.project_no ? `e-GP ${m.project_no}` : `แผน ${m.plan_no}`}`, m.title, `หน่วยงาน: ${m.dept_name}${s.province ? ` (${s.province})` : ""}`];
-    const parts = [s.budget !== null ? `งบประมาณ: ${money(s.budget)} บาท` : "", s.d0 ? `ยื่นซอง ${thDate(s.d0.bid_date)}${s.d0.bid_time ? " " + s.d0.bid_time : ""}` : ""].filter(Boolean);
-    if (parts.length) lines.push(parts.join(" · "));
-    lines.push("ขอ: ราคาทุน + สต็อก ภายใน ____", `เอกสาร/TOR: ${s.tor.link}`);
-    return lines.join("\n");
   }
 
   function renderLead() {
@@ -666,8 +691,6 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
         </div>
         <div style="display:grid;gap:14px">
-          <div class="card"><h2>ข้อความส่งให้ Mer</h2><div class="small muted">คัดลอกไปวางใน LINE / Teams / Email แล้วกดสถานะ “ส่งให้ Mer”</div>
-            <pre class="mer" id="mertext">${esc(merText(s))}</pre><div><button class="btn" type="button" id="copy">คัดลอกข้อความ</button></div><div class="msg" id="copymsg" aria-live="polite"></div></div>
           <div class="card"><h2>ประกาศของโครงการนี้</h2><div>${anns.map(a => `<div class="ann">
             <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
             <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
@@ -676,11 +699,6 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
               ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("")}</div></div>
         </div>
       </div>`;
-    document.getElementById("copy").onclick = () => {
-      const el = document.getElementById("mertext"), cm = document.getElementById("copymsg");
-      const fallback = () => { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); cm.textContent = "เลือกข้อความให้แล้ว กด Ctrl+C เพื่อคัดลอก"; };
-      try { navigator.clipboard.writeText(el.textContent).then(() => { cm.className = "msg ok"; cm.textContent = "คัดลอกแล้ว"; }, fallback); } catch (e) { fallback(); }
-    };
     if (!isDV) return;
     const f = document.getElementById("form");
     f.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
