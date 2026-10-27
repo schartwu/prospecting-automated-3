@@ -5,7 +5,7 @@
 //   me     -> {name, role}
 //   board  -> leads of the last `days` days in Sales' provinces, with latest status and e-GP outcome
 //   lead   -> {announcements, events} of one lead
-//   save   -> add one status (Division Manager only)
+//   save   -> add one status (role dv or sale; viewer only looks)
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     }
 
     case "save": {
-      if (user.role !== "dv") return reply({ error: "บัญชีนี้ดูได้อย่างเดียว" }, 403);
+      if (!["dv", "sale"].includes(user.role)) return reply({ error: "บัญชีนี้ดูได้อย่างเดียว" }, 403);
       const key = String(body.key ?? "");
       const status = String(body.status ?? "");
       const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).filter((r) => REASONS.includes(r)) : [];

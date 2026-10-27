@@ -112,6 +112,9 @@ a.kpi:hover { border-color: var(--accent); }
 .kpi .value { font-size: 28px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .kpi .sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .kpi.win { border-color: var(--good); }
+tr.warn td { background: var(--bad-soft); }
+tr.total td { font-weight: 500; border-top: 2px solid var(--line); }
+.who-by { font-weight: 500; color: var(--ink); }
 button.kpi { font: inherit; text-align: left; cursor: pointer; }
 button.kpi:hover { border-color: var(--accent); }
 button.kpi[aria-expanded="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -245,13 +248,19 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     D0: "เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง", B0: "ร่างเอกสาร ประกาศจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
     "15": "บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน", P0: "แผนประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน",
     W0: "ใครชนะ ราคาเท่าไร ใช้ดูคู่แข่ง" };
+  const STATUS_MEANING = {
+    received: "เห็น Lead แล้ว กำลังดูว่าจะไปต่อไหม", contacted: "โทร คุย หรือเข้าพบฝ่ายพัสดุ / ผู้ใช้งานของหน่วยงานแล้ว",
+    sent_to_mer: "ส่งรายการสินค้าหรือ Spec ให้ Mer ขอราคาและเช็กสินค้า", mer_replied: "ได้ราคาหรือข้อมูลสินค้าจาก Mer แล้ว",
+    bid: "ยื่นซองในระบบ e-GP แล้ว (ใส่ราคาที่ยื่นได้)", no_bid: "ตัดสินใจไม่ยื่น ต้องเลือกเหตุผล", other: "กรณีอื่น ต้องเขียนหมายเหตุ" };
+  const EDITORS = ["dv", "sale"];           // dv = Division Manager, sale = his team; viewer = monitor, read only
+  const ROLE = { dv: "DV", sale: "Sale", viewer: "Monitor" };
   const RESULT = { win: ["🏆 OfficeMate ชนะ", "win"], lost: ["แพ้", "bad"], other_won: ["บริษัทอื่นชนะ", "bad"] };
   const FIRST_DAY = "2026-10-09";
   const VIEWS = [
-    ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
     ["leads", "Lead", '<path d="M4 6h16M4 12h16M4 18h10"/>'],
     ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
     ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
+    ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
     ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
   ];
 
@@ -293,7 +302,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
     if (data.user) {
       state.user = data.user;
-      document.getElementById("who").textContent = `${data.user.name} · ${data.user.role === "dv" ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+      document.getElementById("who").textContent = `${data.user.name} · ${EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
     }
     if (data.provinces) state.provinces = data.provinces;
     return data;
@@ -307,16 +316,20 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   // ---------------- state ----------------
-  // Two periods: the lists (ภาพรวม, Lead, ผลลัพธ์) by morning-email day, default 7 days; the status board
-  // by the day of the latest status update, default 30 days.
+  // Each tab keeps its own period. Lead, ผลลัพธ์ and ภาพรวม count by morning-email day; ติดตามสถานะ by the
+  // day of the latest status update.
   const state = {
     user: null, provinces: [], days: [], area: "target",
-    main: { preset: "7", from: null, to: null }, track: { preset: "30", from: null, to: null },
-    leads: null, outcomes: null, tracking: null, loadedRange: "",
-    l: { type: "all", status: "all", q: "", sort: "score", shown: 60 },
+    per: { leads: { preset: "last" }, tracking: { preset: "30" }, results: { preset: "month" }, overview: { preset: "month" } },
+    cache: {}, leads: null, outcomes: null, tracking: null,
+    l: { type: "D0", status: "all", q: "", sort: "score", shown: 60 },
+    t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", shown: 100 },
   };
-  const per = () => currentView === "tracking" ? state.track : state.main;
+  const per = () => state.per[currentView] || state.per.leads;
+  const mayEdit = () => !!state.user && EDITORS.includes(state.user.role);
+  // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
+  const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
   const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
@@ -332,10 +345,27 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   async function ensureRange() {
-    const { from, to } = state.main, key = `${from}|${to}`;
-    if (state.loadedRange === key && state.leads && state.outcomes) return;
-    const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
-    state.leads = l.rows || []; state.outcomes = o.rows || []; state.loadedRange = key;
+    const { from, to } = per(), key = `${from}|${to}`;
+    if (!state.cache[key]) {
+      const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
+      state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: o.rows || [] };
+    }
+    ({ leads: state.leads, outcomes: state.outcomes } = state.cache[key]);
+  }
+
+  // One row per project. Its announcements (ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) fold into the latest one,
+  // so a project is counted once and its budget once. Plans (P0) have their own key and stay apart.
+  const STAGE = { P0: 0, B0: 1, "15": 2, D0: 3 };
+  function groupLeads(rows) {
+    const by = new Map();
+    rows.forEach(r => { const g = by.get(r.lead_key); if (g) g.push(r); else by.set(r.lead_key, [r]); });
+    return [...by.values()].map(rs => {
+      rs.sort((a, b) => STAGE[a.type] - STAGE[b.type] || String(a.pub_date).localeCompare(String(b.pub_date)));
+      const top = rs[rs.length - 1], seen = new Set();
+      return { ...top, score: Math.max(...rs.map(r => r.score)),
+        budget_thb: num(top.budget_thb) !== null ? top.budget_thb : (rs.find(r => num(r.budget_thb) !== null) || {}).budget_thb ?? null,
+        stages: [...rs].reverse().filter(r => !seen.has(r.type) && seen.add(r.type)).reverse().map(r => ({ type: r.type, pub_date: r.pub_date })) };
+    });
   }
 
   // ---------------- layout pieces ----------------
@@ -404,13 +434,17 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const left = r.type === "D0" ? daysTo(r.bid_date) : null;
     const when = r.type === "P0" ? (r.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(r.expected_month))}</span>` : "")
       : r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${r.bid_time ? " " + esc(r.bid_time) : ""}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : left !== null && left < 0 ? " · ปิดแล้ว" : ""}</span>` : "";
-    const canEdit = state.user && state.user.role === "dv";
+    const canEdit = mayEdit();
+    const trail = r.stages && r.stages.length > 1
+      ? `<span>${r.stages.map(x => `${esc(TYPE[x.type] || x.type)} ${esc(thDate(x.pub_date))}`).join(" → ")}</span>`
+      : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
     return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
       <div style="display:grid;gap:5px;min-width:0">
         <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${scoreBadge(r.score)}${statusPill(r.status, r.status_by, r.status_at)}${resultPill(r.result)}
+          ${missed(r) ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : ""}
           ${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}${r.amended ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
-        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}<span>ประกาศ ${esc(thDate(r.pub_date))}</span></div>
+        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
       </div>
       <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
@@ -428,7 +462,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["D0", "B0", "15", "P0"].map(t => [t, leads.filter(r => r.type === t)]);
+    const byType = ["D0", "B0", "15", "P0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
+    const letGo = leads.filter(missed);
     const funnel = [["Lead ทั้งหมด", leads.length], ["มีสถานะแล้ว", leads.filter(r => r.status).length],
       ["ส่งให้ Mer", leads.filter(r => ["sent_to_mer", "mer_replied", "bid"].includes(r.status)).length],
       ["ยื่นราคาแล้ว", leads.filter(r => r.status === "bid" || r.result === "lost" || r.result === "win").length],
@@ -439,22 +474,24 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <span>${statusPill(r.status)}</span></a>`;
     body.innerHTML = `
       <div class="kpis">
-        <a class="kpi" href="${href({ v: "leads" })}"><span class="label">Lead ในช่วงนี้</span><span class="value">${leads.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(leads, "budget_thb"))}</span></a>
-        <a class="kpi alert" href="${href({ v: "leads", status: "none" })}"><span class="label">ยังไม่มีสถานะ</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview" })}"><span class="label">Lead ในช่วงนี้ (โครงการ)</span><span class="value">${leads.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(leads, "budget_thb"))}</span></a>
+        <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview" })}"><span class="label">ยังไม่มีสถานะ</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
         <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
           <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
-        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", sort: "budget" })}">ดูทั้งหมด →</a></div>
+        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview" })}">ดูทั้งหมด →</a></div>
           <div>${top.map(mini).join("") || '<div class="empty">ไม่มี Lead ที่ระบุงบ</div>'}</div></div>
         <div class="stack">
         <div class="card"><h2>ความคืบหน้าของ Lead ในช่วงนี้</h2>
           <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
-        <div class="card"><h2>Lead แยกตามประเภท</h2>
+        <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
           <div class="tbl"><table><thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
-          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t })}">${TYPE[t]}</a><div class="small muted">${TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview" })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (ไม่รวมที่เลยวันยื่นซองโดยไม่มีใครอัปเดต)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
+          <tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview" })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>
+          <tr class="total"><td>รวม</td><td class="num">${leads.length}</td><td class="num money">${short(sum(leads, "budget_thb"))}</td></tr>
           </tbody></table></div></div>
         </div>
       </div>`;
@@ -463,6 +500,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // ---------------- Lead ----------------
   const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["P0", "แผนจัดซื้อ"]];
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true], ["none", "ยังไม่มีสถานะ", r => !r.status],
+    ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต", missed],
     ["doing", "กำลังทำ", r => ["received", "contacted", "sent_to_mer", "mer_replied", "other"].includes(r.status)],
     ["bid", "ยื่นแล้ว", r => r.status === "bid"], ["no_bid", "ไม่ยื่น", r => r.status === "no_bid"]];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
@@ -491,7 +529,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
             <select id="sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${L.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select>
             <button class="btn" type="button" id="dl">⬇ Excel</button></div>
         </div>
-        <div class="small muted">${rows.length.toLocaleString("th-TH")} รายการ · งบรวม ${short(sum(rows, "budget_thb"))}</div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))} · โครงการที่มีหลายประกาศแสดงครั้งเดียวตามประกาศล่าสุด</div>
       </div>
       <div class="list">${rows.slice(0, L.shown).map(leadCard).join("") || '<div class="card empty">ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่</div>'}</div>
       ${rows.length > L.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - L.shown})</button></div>` : ""}`;
@@ -502,38 +540,66 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     qi.oninput = () => { L.q = qi.value; const p = qi.selectionStart; leadsPage(body, redraw); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(p, p); };
     const more = document.getElementById("more"); if (more) more.onclick = () => { L.shown += 60; leadsPage(body, redraw); };
     document.getElementById("dl").onclick = () => download(`Lead_${AREA.find(a => a[0] === state.area)[1]}`, rows.map(r => ({
-      "วันที่ในอีเมล": r.email_date, "ประเภทประกาศ": TYPE[r.type], "คะแนน": r.score, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name,
+      "วันที่ในอีเมล": r.email_date, "ประเภทประกาศ (ล่าสุด)": TYPE[r.type],
+      "ประกาศของโครงการ": (r.stages || []).map(x => `${TYPE[x.type] || x.type} ${x.pub_date}`).join(" → "), "คะแนน": r.score, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name,
       "จังหวัด": r.province || "", "งบประมาณ (บาท)": num(r.budget_thb) ?? "", "วันยื่นซอง": r.bid_date || "", "เวลายื่น": r.bid_time || "",
       "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
-      "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
+      "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : missed(r) ? "เลยวันยื่นซอง ไม่มีใครอัปเดต" : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
       "ผู้ชนะ": r.winners || "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "",
       "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || "", "ลิงก์": r.link })));
   }
 
   // ---------------- ติดตามสถานะ ----------------
-  const COLUMNS = [["กำลังดำเนินการ", r => ["received", "contacted", "other"].includes(r.status) && !r.result],
-    ["รอ Mer", r => r.status === "sent_to_mer" && !r.result], ["Mer ตอบแล้ว", r => r.status === "mer_replied" && !r.result],
-    ["ยื่นราคาแล้ว รอผล", r => r.status === "bid" && !r.result], ["มีผลแล้ว", r => !!r.result], ["ไม่ยื่น", r => r.status === "no_bid" && !r.result]];
+  const STAGES = [["all", "ทั้งหมด", () => true],
+    ["doing", "กำลังดำเนินการ", r => ["received", "contacted", "other"].includes(r.status) && !r.result],
+    ["mer", "รอ Mer", r => r.status === "sent_to_mer" && !r.result], ["merok", "Mer ตอบแล้ว", r => r.status === "mer_replied" && !r.result],
+    ["bid", "ยื่นราคาแล้ว รอผล", r => r.status === "bid" && !r.result], ["result", "มีผลแล้ว", r => !!r.result],
+    ["nobid", "ไม่ยื่น", r => r.status === "no_bid" && !r.result]];
+  const TSORTS = { latest: ["อัปเดตล่าสุด", (a, b) => String(b.status_at).localeCompare(String(a.status_at))],
+    deadline: ["ใกล้วันยื่นซอง", SORTS.deadline[1]], budget: ["งบสูงสุด", SORTS.budget[1]] };
 
   function tracking(body) {
+    const T = state.t;
     // by the Bangkok day of the latest status update
     const bkkDay = t => new Date(new Date(t).getTime() + 7 * 3600e3).toISOString().slice(0, 10);
-    const rows = state.tracking.filter(areaOk).filter(r => { const d = bkkDay(r.status_at); return d >= state.track.from && d <= state.track.to; });
-    const card = r => `<a class="tcard" href="${href({ lead: r.lead_key, from: "tracking" })}">
-      <span class="t">${esc(r.title || r.lead_key)}</span>
-      <span class="meta"><span class="amt">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>${r.bid_date ? `<span class="${daysTo(r.bid_date) !== null && daysTo(r.bid_date) >= 0 && daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}</span>` : ""}</span>
-      <span class="small muted">${esc(r.dept_name || "")} · ${esc(r.province || "ไม่ระบุจังหวัด")}</span>
-      <span class="badges" style="display:flex;flex-wrap:wrap;gap:4px">${statusPill(r.status)}${resultPill(r.result)}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</span>
-      <span class="small muted">${esc(r.status_by || "")} · ${esc(thTime(r.status_at))}${r.reasons && r.reasons.length ? " · " + esc(r.reasons.join(", ")) : ""}</span></a>`;
-    // On a phone the columns become one list at a time, picked with the chips (CSS hides the others).
-    if (state.tcol === undefined) state.tcol = Math.max(0, COLUMNS.findIndex(([, f]) => rows.some(f)));
-    body.innerHTML = rows.length ? `
-      <div class="chips colpick" role="group" aria-label="ขั้น">${COLUMNS.map(([label, f], i) =>
-        `<button class="chip" type="button" data-col="${i}" aria-pressed="${state.tcol === i}">${label}<span class="n">${rows.filter(f).length}</span></button>`).join("")}</div>
-      <div class="board">${COLUMNS.map(([label, f], i) => { const rs = rows.filter(f);
-        return `<div class="col ${state.tcol === i ? "on" : ""}"><h3><span>${label}</span><span class="muted">${rs.length}</span></h3>${rs.map(card).join("") || '<div class="small muted">–</div>'}</div>`; }).join("")}</div>`
-      : `<div class="card empty">ไม่มี Lead ที่อัปเดตสถานะในช่วงวันที่${state.area !== "all" ? "และพื้นที่" : ""}นี้ · ลองเลือก “ทั้งหมด” หรือเปิดหน้า Lead แล้วกด “อัปเดตสถานะ”</div>`;
-    body.querySelectorAll("[data-col]").forEach(b => b.onclick = () => { state.tcol = Number(b.dataset.col); tracking(body); });
+    const inRange = state.tracking.filter(areaOk).filter(r => { const d = bkkDay(r.status_at); return d >= state.per.tracking.from && d <= state.per.tracking.to; });
+    const people = [...new Set(inRange.map(r => r.status_by).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+    if (T.who !== "all" && !people.includes(T.who)) T.who = "all";
+    const base = inRange.filter(r => T.who === "all" || r.status_by === T.who);
+    const rows = base.filter(STAGES.find(x => x[0] === T.col)[2]).sort(TSORTS[T.sort][1]);
+    const row = r => { const left = daysTo(r.bid_date);
+      return `<a class="lead" href="${href({ lead: r.lead_key, from: "tracking" })}">
+      <div style="display:grid;gap:5px;min-width:0">
+        <div class="badges">${statusPill(r.status)}${resultPill(r.result)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
+        <div class="title">${esc(r.title || r.lead_key)}</div>
+        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>
+          ${r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : " · ปิดแล้ว"}</span>` : ""}</div>
+        <div class="meta"><span>อัปเดตโดย <b class="who-by">${esc(r.status_by || "–")}</b> · ${esc(thTime(r.status_at))}${r.n_events > 1 ? ` · ${r.n_events} ครั้ง` : ""}</span>
+          ${r.reasons && r.reasons.length ? `<span>เหตุผล: ${esc(r.reasons.join(", "))}</span>` : ""}${r.note ? `<span>“${esc(r.note)}”</span>` : ""}</div>
+      </div>
+      <div class="money"><span class="label">งบประมาณ</span>
+        <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
+        ${num(r.bid_price) !== null ? `<span class="small muted">ราคาที่ยื่น ${baht(r.bid_price)}</span>` : ""}
+        ${r.winner_price && r.result ? `<span class="small muted">ราคาที่ชนะ ${baht(r.winner_price)}</span>` : ""}
+        <span class="act btn sm ${mayEdit() ? "primary" : ""}">${mayEdit() ? "อัปเดตสถานะ" : "ดูรายละเอียด"}</span></div></a>`; };
+    body.innerHTML = `
+      <div class="card">
+        <div class="chips" role="group" aria-label="ขั้น">${STAGES.map(([k, l, f]) =>
+          `<button class="chip" type="button" data-col="${k}" aria-pressed="${T.col === k}">${l}<span class="n">${base.filter(f).length}</span></button>`).join("")}</div>
+        <div class="toolrow">
+          <div class="daterow"><label class="small muted" for="who-f">ผู้อัปเดต</label>
+            <select id="who-f"><option value="all">ทุกคน (${inRange.length})</option>${people.map(n => `<option value="${esc(n)}" ${T.who === n ? "selected" : ""}>${esc(n)} (${inRange.filter(r => r.status_by === n).length})</option>`).join("")}</select></div>
+          <div class="daterow"><label class="small muted" for="tsort">เรียง</label>
+            <select id="tsort">${Object.entries(TSORTS).map(([k, [l]]) => `<option value="${k}" ${T.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        </div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))}</div>
+      </div>
+      <div class="list">${rows.slice(0, T.shown).map(row).join("") || `<div class="card empty">ไม่มีโครงการในขั้นนี้ · ลองเลือก “ทั้งหมด” ขยายช่วงวันที่${state.area !== "all" ? " หรือเปลี่ยนพื้นที่" : ""}</div>`}</div>
+      ${rows.length > T.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - T.shown})</button></div>` : ""}`;
+    body.querySelectorAll("[data-col]").forEach(b => b.onclick = () => { T.col = b.dataset.col; T.shown = 50; tracking(body); });
+    document.getElementById("who-f").onchange = e => { T.who = e.target.value; T.shown = 50; tracking(body); };
+    document.getElementById("tsort").onchange = e => { T.sort = e.target.value; tracking(body); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { T.shown += 50; tracking(body); };
   }
 
   // ---------------- ผลลัพธ์ ----------------
@@ -619,21 +685,21 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // ---------------- คู่มือ ----------------
   function guide() {
     main.innerHTML = `<div class="grid2">
-      <div class="card legend"><h2>หน้าต่าง ๆ</h2><dl>
-        <dt>ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานที่ใกล้ปิดรับซอง Lead งบสูงสุด และความคืบหน้า</dd>
-        <dt>Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) เรียงคะแนนสูงสุดแล้วงบสูงสุด กดการ์ดเพื่ออัปเดตสถานะ</dd>
-        <dt>ติดตามสถานะ</dt><dd>Lead ที่มีการอัปเดตสถานะแล้ว แยกตามขั้น ไม่ขึ้นกับช่วงวันที่</dd>
-        <dt>ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด</dd></dl>
+      <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
+        <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
+        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: 30 วัน</dd>
+        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>
+        <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
-        <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd></dl></div>
+        <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
+        <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd></dl></div>
       <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
-        <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 90–100</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
-        <dt>${scoreBadge(75)} 75–89</dt><dd>คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
-        <dt>${scoreBadge(60)} 60–74</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
-        <dt>${scoreBadge(50)} 50–59</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
-        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt>`).join("")}</dl>
-        <p class="small muted">DV เป็นผู้อัปเดตสถานะ ผลแพ้/ชนะระบบตรวจเองจากประกาศผู้ชนะ</p></div></div>`;
+        <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
+        <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
+        <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
+        <dt>${scoreBadge(50)} 59–50</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
+        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div></div>`;
   }
 
   // ---------------- one lead ----------------
@@ -659,7 +725,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   function renderLead() {
     const { data } = current;
-    const anns = data.announcements, s = leadSummary(anns), isDV = data.user.role === "dv";
+    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role);
     const events = data.events || [], last = events[events.length - 1];
     const left = s.d0 ? daysTo(s.d0.bid_date) : null;
     const outcome = s.w0 ? (isOurs(s.w0.winners.join(", ")) ? `<span class="pill win">🏆 OfficeMate ชนะ · ${baht(s.w0.winner_price)}</span>`
@@ -724,7 +790,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         const res = await api("save", { key: current.key, status: current.status, reasons: [...current.reasons],
           bid_price: current.status === "bid" ? document.getElementById("price").value.trim() : null, note });
         current.data.events = res.events; current.status = null; current.reasons = new Set();
-        state.loadedRange = ""; state.tracking = null;     // lists show the new status next time
+        state.cache = {}; state.tracking = null;           // lists show the new status next time
         renderLead();
         const m = document.getElementById("msg"); m.className = "msg ok"; m.textContent = "บันทึกแล้ว";
       } catch (e) { btn.disabled = false; err(e.message); }
@@ -732,7 +798,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   // ---------------- routing ----------------
-  let currentView = "overview";
+  let currentView = "leads";
 
   async function route() {
     const p = hashParams();
@@ -743,7 +809,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     }
     window.scrollTo(0, 0);
     const lead = p.get("lead");
-    const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "overview";
+    const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
     if (p.get("status")) state.l.status = p.get("status");
     if (p.get("type")) state.l.type = p.get("type");
     if (p.get("sort")) state.l.sort = p.get("sort");
@@ -751,8 +817,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     currentView = view;
     renderNav(view);
     try {
-      if (!state.days.length) { state.days = (await api("days")).days || []; applyPreset(state.main.preset, state.main); applyPreset(state.track.preset, state.track); }
+      if (!state.days.length) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    const sync = state.per[p.get("sync")];
+    if (sync && state.per[view] && sync !== state.per[view]) Object.assign(state.per[view], sync);
     if (view === "guide") return guide();
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
     const build = { overview, leads: leadsPage, results }[view];

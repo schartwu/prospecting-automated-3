@@ -16,6 +16,7 @@ import sys
 from urllib.parse import quote
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from email.utils import formataddr
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -69,11 +70,11 @@ TYPE_MEANING = {
     "W2": "แก้ไข/เปลี่ยนแปลงประกาศผู้ชนะ",
 }
 SCORE_BANDS = [
-    ("90-100", "สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน"),
-    ("75-89", "ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน"),
-    ("60-74", "โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ"),
-    ("40-59", "ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย"),
-    ("0-39", "ไม่ใช่สินค้าที่ OfficeMate ขาย (ไม่แสดงในอีเมล)"),
+    ("100-90", "สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน"),
+    ("89-75", "ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน"),
+    ("74-60", "โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ"),
+    ("59-40", "ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย"),
+    ("39-0", "ไม่ใช่สินค้าที่ OfficeMate ขาย (ไม่แสดงในอีเมล)"),
 ]
 
 
@@ -399,9 +400,13 @@ def style_sheet(ws, number_cols=frozenset(), wrap_cols=None):
     ws.auto_filter.ref = ws.dimensions
 
 
-def send(subject, html_body, attachment, recipients):
+SENDER_NAME = "KG Lead (e-GP Alert)"  # personal KG Lead copies; the team digest keeps the bare address for now
+
+
+def send(subject, html_body, attachment, recipients, sender_name=None):
+    """sender_name is the name shown instead of the bare address (the address itself stays visible)."""
     msg = EmailMessage()
-    msg["From"] = os.environ["SENDER_EMAIL"]
+    msg["From"] = formataddr((sender_name, os.environ["SENDER_EMAIL"])) if sender_name else os.environ["SENDER_EMAIL"]
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
     msg.set_content("กรุณาเปิดอีเมลนี้ในโหมด HTML")
@@ -488,7 +493,7 @@ def main():
             body, rows, outcomes, xlsx = make(loop=True, suffix=f"{suffix}{i}", token=token)
             if token is None:
                 print(f"::warning::{email} is not a Lead Loop user; sent without web links")
-            send(subject(rows, outcomes, prefix), body, None if token else xlsx, [email])
+            send(subject(rows, outcomes, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
         print(f"{prefix.strip()} sent to {len(to)} recipient(s)")
 
     loop_to = emails(os.environ.get("LOOP_RECIPIENTS"))
