@@ -57,15 +57,21 @@ Deno.serve(async (req) => {
       return reply({ name: user.name, role: user.role });
 
     case "items":
+    case "leads":
     case "outcomes": {
-      // The former Excel tabs, by morning-email day. Ranges are capped at 92 days to keep answers quick.
+      // Lists by morning-email day: leads (D0/B0/15/P0), results (W0/D1), or both (items, the old Excel tab).
       const from = String(body.from ?? ""), to = String(body.to ?? "");
       const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
       if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
-      if ((Date.parse(to) - Date.parse(from)) / 864e5 > 92) return reply({ error: "เลือกช่วงได้ไม่เกิน 3 เดือน" }, 400);
-      const fn = body.action === "items" ? "web_items" : "web_outcomes";
+      const fn = { items: "web_items", leads: "web_leads", outcomes: "web_outcomes" }[body.action as string]!;
       const { data, error } = await db.rpc(fn, { p_from: from, p_to: to });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
+    }
+
+    case "tracking": {
+      const { data, error } = await db.rpc("web_tracking");
+      if (error) return reply({ error: "โหลดรายการติดตามไม่สำเร็จ" }, 500);
       return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
     }
 

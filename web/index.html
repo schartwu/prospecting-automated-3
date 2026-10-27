@@ -14,420 +14,597 @@
 <!-- SheetJS, only for the "ดาวน์โหลด Excel" buttons -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <style>
-/* KG Lead: the morning email's lists by day (results, Sales' provinces, other provinces, legend) and one
-   lead's page (status + history). Opened from personal links: #t=<token>[&lead=<key>]. */
+/* KG Lead. Pages: ภาพรวม (what needs attention, how we are doing), Lead (opportunities: plans, draft TORs,
+   reference prices, invitations), ติดตามสถานะ (leads someone has acted on, by stage), ผลลัพธ์ (who won),
+   คู่มือ. A lead opens its own page (status + history). Personal links: #t=<token>[&v=<page>][&lead=<key>]. */
 :root {
-  --bg: #f3f5f6; --surface: #ffffff; --ink: #17232b; --muted: #5b6b74; --line: #d6dde1;
+  --bg: #f2f4f5; --surface: #ffffff; --ink: #15212a; --muted: #5d6c75; --line: #d9dfe3; --soft: #eef1f3;
   --accent: #0b6e69; --accent-soft: #dcefed; --on-accent: #ffffff;
-  --good: #1f7a3a; --good-soft: #def2e3; --warn: #9a6400; --warn-soft: #fbf0d4; --bad: #b3261e; --bad-soft: #fbe1df;
+  --money: #0b4f4b;
+  --good: #1f7a3a; --good-soft: #def2e3; --warn: #93600a; --warn-soft: #fbefd2; --bad: #b3261e; --bad-soft: #fbe1df;
   --font: "Kanit", Tahoma, "Leelawadee UI", sans-serif;
+  --nav-h: 0px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root {
-  --bg: #0f171c; --surface: #17222a; --ink: #e6edf0; --muted: #9aabb4; --line: #2b3a43;
-  --accent: #4cc2b9; --accent-soft: #163a39; --on-accent: #0f171c;
-  --good: #6fd08a; --good-soft: #17331f; --warn: #e6b65a; --warn-soft: #362a12; --bad: #f08a83; --bad-soft: #3a1b19;
+  --bg: #0e161b; --surface: #16212a; --ink: #e6edf0; --muted: #98a9b2; --line: #2a3943; --soft: #1c2a33;
+  --accent: #4cc2b9; --accent-soft: #143836; --on-accent: #0e161b;
+  --money: #7fdad2;
+  --good: #6fd08a; --good-soft: #16321e; --warn: #e6b65a; --warn-soft: #352910; --bad: #f08a83; --bad-soft: #3a1b19;
   color-scheme: dark; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--ink); font-family: var(--font); font-weight: 300; font-size: 15px; line-height: 1.6; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-weight: 300; font-size: 15px; line-height: 1.55;
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
 b, strong { font-weight: 500; }
-.wrap { max-width: 1120px; margin: 0 auto; padding-block: 18px 48px;
-  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 14px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
-h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: .01em; }
-h2 { font-size: 19px; font-weight: 500; margin: 0; line-height: 1.35; text-wrap: balance; }
-h3 { font-size: 16px; font-weight: 500; margin: 0; }
 a { color: var(--accent); }
+button, input, select, textarea { font-family: var(--font); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* app bar + navigation */
+.appbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.appbar .in { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; gap: 18px; min-height: 56px; }
+.brand { font-size: 22px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
+.brand span { color: var(--accent); }
+.nav { display: flex; gap: 2px; flex: 1; }
+.nav a { display: inline-flex; align-items: center; gap: 6px; padding: 16px 12px 13px; color: var(--muted); text-decoration: none;
+  font-weight: 400; border-bottom: 3px solid transparent; white-space: nowrap; }
+.nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+.nav svg { width: 18px; height: 18px; }
+.who { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 820px) {
+  :root { --nav-h: 62px; }
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom, 0px); justify-content: space-around; }
+  .nav a { flex-direction: column; gap: 0; padding: 8px 2px 6px; font-size: 11.5px; border-bottom: 0; border-top: 3px solid transparent; flex: 1; justify-content: center; }
+  .nav a[aria-current="page"] { border-top-color: var(--accent); }
+  .nav svg { width: 22px; height: 22px; }
+  .appbar .in { justify-content: space-between; }
+}
+
+main { max-width: 1180px; margin: 0 auto; padding-block: 16px 40px; display: grid; gap: 14px; }
+h1 { font-size: 22px; font-weight: 500; margin: 0; line-height: 1.3; text-wrap: balance; }
+h2 { font-size: 18px; font-weight: 500; margin: 0; }
+h3 { font-size: 15px; font-weight: 500; margin: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
-.who { font-size: 13px; color: var(--muted); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
-button, input, select, textarea { font-family: var(--font); }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* toolbar: period + area */
+.toolbar { display: grid; gap: 10px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--soft); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--ink); font-size: 13.5px; font-weight: 400; padding: 5px 11px; border-radius: 8px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.toolrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.daterow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+input[type="date"], input.txt, select, textarea { font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+input.txt { min-width: 0; flex: 1 1 240px; }
+textarea { width: 100%; resize: vertical; }
+.period-label { font-size: 13px; color: var(--muted); }
+
+.btn { font-size: 14px; font-weight: 400; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.sm { font-size: 13px; padding: 3px 10px; }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: 13px; font-weight: 400; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--line);
   background: var(--surface); color: var(--ink); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 .chip.reason[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
-.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-input.txt, textarea, select, input[type="date"] { font-size: 14px; color: var(--ink); background: var(--surface);
-  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
-input.txt { min-width: 0; flex: 1 1 220px; }
-textarea { width: 100%; resize: vertical; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn { font-size: 14px; font-weight: 400; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--bg); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-.btn:hover { border-color: var(--accent); }
-.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
-.btn.small { font-size: 13px; padding: 3px 10px; }
-.btn:disabled { opacity: .55; cursor: default; }
-.datebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.datebar .sep { color: var(--muted); }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
-.tab { font-size: 15px; font-weight: 400; padding: 8px 14px; border: 0; border-bottom: 3px solid transparent;
-  background: none; color: var(--muted); cursor: pointer; white-space: nowrap; }
-.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+.chip .n { color: var(--muted); margin-left: 2px; }
+
+/* KPI tiles */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .kpis { grid-template-columns: 1fr 1fr; } .kpi .value { font-size: 24px; } .kpi { padding: 10px 12px; } }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; text-decoration: none; color: inherit; }
+a.kpi:hover { border-color: var(--accent); }
+.kpi .label { font-size: 13px; color: var(--muted); }
+.kpi .value { font-size: 28px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kpi.win { border-color: var(--good); }
+.kpi.win .value { color: var(--good); }
+.kpi.alert .value { color: var(--warn); }
+
+/* lead cards */
 .list { display: grid; gap: 8px; }
-.row { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; }
-.row .t { font-weight: 400; }
-.row .t a { color: var(--ink); text-decoration: none; }
-.row .t a:hover { color: var(--accent); text-decoration: underline; }
-.row .side { display: grid; gap: 4px; justify-items: end; align-content: start; }
+.lead { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 8px 16px; color: inherit; text-decoration: none; }
+.lead:hover { border-color: var(--accent); }
+.lead .badges { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.lead .title { font-size: 15.5px; font-weight: 400; line-height: 1.45; }
+.lead .money { text-align: right; display: grid; align-content: start; gap: 2px; }
+.lead .money .label { font-size: 12px; color: var(--muted); }
+.lead .money .amt { font-size: 22px; font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.lead .money .amt.none { font-size: 14px; font-weight: 300; color: var(--muted); }
+.lead .money .act { margin-top: 6px; justify-self: end; }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; padding: 1px 9px;
-  border-radius: 999px; white-space: nowrap; background: var(--bg); color: var(--muted); }
-.pill.type { background: var(--accent-soft); color: var(--accent); }
+  border-radius: 999px; white-space: nowrap; background: var(--soft); color: var(--muted); }
+.pill.type { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
 .pill.st { background: var(--warn-soft); color: var(--warn); }
 .pill.done { background: var(--accent-soft); color: var(--accent); }
-.pill.win { background: var(--good-soft); color: var(--good); }
+.pill.win { background: var(--good-soft); color: var(--good); font-weight: 500; }
 .pill.bad { background: var(--bad-soft); color: var(--bad); }
+.score { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; padding: 0 6px;
+  border-radius: 6px; font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.score.s90 { background: var(--good-soft); color: var(--good); }
+.score.s75 { background: var(--accent-soft); color: var(--accent); }
+.score.s60 { background: var(--warn-soft); color: var(--warn); }
+.score.s50 { background: var(--soft); color: var(--muted); }
 .urgent { color: var(--bad); font-weight: 500; }
-.summary { background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; font-size: 15px; }
+@media (max-width: 640px) {
+  .lead { grid-template-columns: 1fr; }
+  .lead .money { text-align: left; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; }
+  .lead .money .act { margin-top: 0; }
+}
+
+/* overview */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+.mini { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 9px 0; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.mini:last-child { border-bottom: 0; }
+.mini:hover .t { color: var(--accent); }
+.mini .t { font-size: 14.5px; }
+.mini .amt { font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; text-align: right; }
+.funnel { display: grid; gap: 7px; }
+.fbar { display: grid; grid-template-columns: 120px 1fr 60px; gap: 10px; align-items: center; font-size: 14px; }
+.fbar .track { background: var(--soft); border-radius: 5px; height: 16px; overflow: hidden; }
+.fbar .fill { height: 100%; background: var(--accent); border-radius: 5px; min-width: 2px; }
+.fbar .fill.win { background: var(--good); }
+.fbar .n { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* tracking board */
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.col { background: var(--soft); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; min-height: 120px; }
+.col h3 { display: flex; justify-content: space-between; font-size: 14px; }
+.tcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; display: grid; gap: 4px;
+  color: inherit; text-decoration: none; }
+.tcard:hover { border-color: var(--accent); }
+.tcard .t { font-size: 14px; line-height: 1.4; }
+.tcard .amt { font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; }
+.colpick { display: none; }
+@media (max-width: 820px) {
+  .board { grid-auto-flow: row; grid-auto-columns: auto; overflow: visible; }
+  .colpick { display: flex; }
+  .col:not(.on) { display: none; }
+}
+
+/* tables */
 .tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--bg); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--soft); white-space: nowrap; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.num.money { color: var(--money); font-weight: 500; }
 tr:last-child td { border-bottom: 0; }
+
+/* lead page */
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 20px; align-items: start; }
+.hero .amt { font-size: 30px; font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; line-height: 1.15; text-align: right; }
+.hero .amt-label { text-align: right; }
+@media (max-width: 640px) { .hero { grid-template-columns: 1fr; } .hero .amt, .hero .amt-label { text-align: left; } }
 .group { display: grid; gap: 6px; }
 .group > span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
 label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .msg { font-size: 14px; min-height: 1.4em; }
 .msg.ok { color: var(--good); } .msg.err { color: var(--bad); }
-.timeline { display: grid; gap: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
+.timeline { display: grid; gap: 9px; border-left: 2px solid var(--line); padding-left: 12px; }
 .timeline .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.anns { display: grid; gap: 10px; }
 .ann { display: grid; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .ann:last-child { border-bottom: 0; padding-bottom: 0; }
-pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size: 14px; background: var(--bg);
+pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size: 14px; background: var(--soft);
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-.two { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .legend dt { font-weight: 500; }
 .legend dd { margin: 0 0 8px; color: var(--muted); }
-@media (max-width: 760px) { .two { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } .row .side { justify-items: start; } }
-.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.empty { padding: 26px 16px; text-align: center; color: var(--muted); }
+.error { border-color: var(--bad); color: var(--bad); }
+.skeleton { height: 64px; border-radius: 12px; background: linear-gradient(90deg, var(--soft), var(--surface), var(--soft)); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .skeleton { animation: sh 1.2s infinite linear; } @keyframes sh { to { background-position: -200% 0; } } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>KG Lead</h1>
-    <span class="who" id="who"></span>
-  </header>
-  <main id="app"><div class="card empty">กำลังโหลด…</div></main>
-</div>
+<div class="appbar"><div class="in gutter">
+  <div class="brand">KG <span>Lead</span></div>
+  <nav class="nav" id="nav" aria-label="เมนูหลัก"></nav>
+  <span class="who" id="who"></span>
+</div></div>
+<main class="gutter" id="main"><div class="card empty">กำลังโหลด…</div></main>
 
 <script>
 (() => {
-  const STATUS = {
-    received: "👀 รับเรื่อง", contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer",
-    mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ",
-  };
-  const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]],
-                  ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
+  // ---------------- vocabulary ----------------
+  const STATUS = { received: "👀 รับเรื่อง", contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer",
+    mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ" };
+  const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]], ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
   const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
-  const TYPE = { D0: "ประกาศเชิญชวน", B0: "ร่าง TOR", "15": "ราคากลาง", P0: "แผนจัดซื้อ", W0: "ประกาศผู้ชนะ",
-                 D1: "ยกเลิกประกาศ", D2: "แก้ไขประกาศ", W1: "ยกเลิกผู้ชนะ", W2: "แก้ไขผู้ชนะ" };
+  const TYPE = { D0: "ประกาศเชิญชวน", B0: "ร่าง TOR", "15": "ราคากลาง", P0: "แผนจัดซื้อ", W0: "ประกาศผู้ชนะ", D1: "ยกเลิกประกาศ" };
   const TYPE_MEANING = {
-    P0: "แผนจัดซื้อจัดจ้างประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน",
-    B0: "ร่าง TOR / ร่างเอกสารประกวดราคา ประกาศเชิญชวนจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
-    "15": "ประกาศราคากลาง บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน",
-    D0: "ประกาศเชิญชวน เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง",
-    W0: "ประกาศผู้ชนะ ใครชนะและราคาเท่าไร ใช้ดูคู่แข่ง",
-  };
-  const SCORE_BANDS = [["90–100", "สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน"],
-    ["75–89", "ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน"],
-    ["60–74", "โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ"], ["50–59", "ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย"]];
+    D0: "เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง", B0: "ร่างเอกสาร ประกาศจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
+    "15": "บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน", P0: "แผนประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน",
+    W0: "ใครชนะ ราคาเท่าไร ใช้ดูคู่แข่ง" };
   const RESULT = { win: ["🏆 OfficeMate ชนะ", "win"], lost: ["แพ้", "bad"], other_won: ["บริษัทอื่นชนะ", "bad"] };
-  const TABS = [["results", "ผลลัพธ์"], ["target", "รายการ (กทม. และปริมณฑล)"], ["others", "รายการ (จังหวัดอื่น)"], ["legend", "คำอธิบาย"]];
-  const SHOW = 200;
+  const FIRST_DAY = "2026-10-09";
+  const VIEWS = [
+    ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
+    ["leads", "Lead", '<path d="M4 6h16M4 12h16M4 18h10"/>'],
+    ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
+    ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
+    ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
+  ];
 
-  const app = document.getElementById("app");
-  const who = document.getElementById("who");
+  // ---------------- helpers ----------------
+  const main = document.getElementById("main");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const money = v => v === null || v === undefined || v === "" ? "–" : Number(v).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  const num = v => v === null || v === undefined || v === "" ? null : Number(v);
+  const money = v => num(v) === null ? "–" : num(v).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  const baht = v => num(v) === null ? "–" : "฿" + money(v);
+  const short = v => { const n = num(v); if (n === null) return "–"; if (n >= 1e6) return "฿" + (n / 1e6).toLocaleString("th-TH", { maximumFractionDigits: 1 }) + " ล้าน"; return baht(n); };
   const thDate = d => d ? new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "–";
-  const thTime = d => new Date(d).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  const todayISO = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);   // Bangkok date
+  const thTime = d => new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const todayISO = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
   const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   const daysTo = d => d ? Math.round((new Date(d + "T00:00:00Z") - new Date(todayISO() + "T00:00:00Z")) / 864e5) : null;
   const monthLabel = m => { if (!m) return ""; const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("th-TH", { month: "short", year: "numeric" }); };
   const isOurs = w => !!w && /ออฟฟิศ\s*เมท/.test(w.replace(/ํา/g, "ำ"));
+  const scoreBadge = s => `<span class="score s${s >= 90 ? 90 : s >= 75 ? 75 : s >= 60 ? 60 : 50}" title="คะแนนความตรงกับสินค้า OfficeMate">${s}</span>`;
+  const sum = (rows, k) => rows.reduce((a, r) => a + (num(r[k]) || 0), 0);
 
-  function params() {
-    const p = new URLSearchParams(location.hash.slice(1));
-    return { t: p.get("t") || "", lead: p.get("lead") || "" };
-  }
-  const homeHref = () => "#" + new URLSearchParams({ t: params().t });
-  const leadHref = key => "#" + new URLSearchParams({ t: params().t, lead: key });
-
-  async function api(action, extra = {}) {
-    if (!window.EGP_API) throw new Error("ยังไม่ได้ตั้งค่าที่อยู่ของระบบ ติดต่อผู้ดูแลระบบ");
-    const res = await fetch(window.EGP_API, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: params().t, action, ...extra }) });
-    let data = {};
-    try { data = await res.json(); } catch (e) { /* handled below */ }
-    if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
-    if (data.user) who.textContent = `${data.user.name} · ${data.user.role === "dv" ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
-    return data;
-  }
-  const fail = e => { app.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; };
+  function hashParams() { return new URLSearchParams(location.hash.slice(1)); }
+  const token = () => hashParams().get("t") || "";
+  const href = (o = {}) => "#" + new URLSearchParams({ t: token(), ...o });
 
   function statusPill(s, by, at) {
     if (!s) return '<span class="pill">ยังไม่มีสถานะ</span>';
     const cls = s === "bid" ? "done" : s === "no_bid" ? "bad" : "st";
-    return `<span class="pill ${cls}">${esc(STATUS[s] || s)}</span>` +
-      (at ? `<span class="small muted">${esc(by || "")} · ${esc(thTime(at))}</span>` : "");
+    return `<span class="pill ${cls}" title="${esc(by ? `${by} · ${thTime(at)}` : "")}">${esc(STATUS[s] || s)}</span>`;
+  }
+  const resultPill = r => r && RESULT[r] ? `<span class="pill ${RESULT[r][1]}">${RESULT[r][0]}</span>` : "";
+
+  async function api(action, extra = {}) {
+    if (!window.EGP_API) throw new Error("ยังไม่ได้ตั้งค่าที่อยู่ของระบบ ติดต่อผู้ดูแลระบบ");
+    const res = await fetch(window.EGP_API, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: token(), action, ...extra }) });
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* handled below */ }
+    if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
+    if (data.user) {
+      state.user = data.user;
+      document.getElementById("who").textContent = `${data.user.name} · ${data.user.role === "dv" ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+    }
+    if (data.provinces) state.provinces = data.provinces;
+    return data;
   }
 
   function download(name, rows) {
-    if (!window.XLSX) { alert("กำลังโหลดตัวสร้างไฟล์ ลองกดอีกครั้ง"); return; }
-    const ws = XLSX.utils.json_to_sheet(rows);
+    if (!window.XLSX) { setTimeout(() => download(name, rows), 400); return; }
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name.slice(0, 31));
     XLSX.writeFile(wb, `KG_Lead_${name}_${state.from}${state.to !== state.from ? "_" + state.to : ""}.xlsx`);
   }
 
-  // ---------------- home: calendar + tabs ----------------
-  const state = { days: [], from: null, to: null, tab: "target", items: null, outcomes: null, provinces: [],
-                  type: "all", status: "all", q: "", shown: SHOW, rFilter: "all" };
+  // ---------------- state ----------------
+  const state = {
+    user: null, provinces: [], days: [], preset: "7", from: null, to: null, area: "target",
+    leads: null, outcomes: null, tracking: null, loadedRange: "",
+    l: { type: "all", status: "all", q: "", sort: "score", shown: 60 },
+    r: { q: "", shown: 100 },
+  };
+  const inTarget = r => !r.province || state.provinces.includes(r.province);
+  const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
+  const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
+  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["30", "30 วัน"], ["month", "เดือนนี้"], ["90", "3 เดือน"], ["all", "ทั้งหมด"], ["custom", "กำหนดเอง"]];
 
-  async function showHome() {
-    app.innerHTML = '<div class="card empty">กำลังโหลด…</div>';
-    try {
-      if (!state.days.length) {
-        state.days = (await api("days")).days || [];
-        const last = state.days[state.days.length - 1] || todayISO();
-        state.from = state.from || last; state.to = state.to || last;
-      }
-      await loadRange();
-    } catch (e) { fail(e); }
+  function applyPreset(p) {
+    state.preset = p;
+    const end = todayISO(), last = state.days[state.days.length - 1] || end;
+    if (p === "last") { state.from = state.to = last; }
+    else if (p === "month") { state.from = end.slice(0, 8) + "01"; state.to = end; }
+    else if (p === "all") { state.from = FIRST_DAY; state.to = end; }
+    else if (p !== "custom") { state.to = end; state.from = addDays(end, -(Number(p) - 1)); }
   }
 
-  async function loadRange() {
-    app.innerHTML = '<div class="card empty">กำลังโหลดรายการ…</div>';
-    try {
-      const [items, outcomes] = await Promise.all([
-        api("items", { from: state.from, to: state.to }), api("outcomes", { from: state.from, to: state.to })]);
-      state.items = items.rows || []; state.outcomes = outcomes.rows || []; state.provinces = items.provinces || [];
-      state.shown = SHOW;
-      renderHome();
-    } catch (e) { fail(e); }
+  async function ensureRange() {
+    const key = `${state.from}|${state.to}`;
+    if (state.loadedRange === key && state.leads && state.outcomes) return;
+    const [l, o] = await Promise.all([api("leads", { from: state.from, to: state.to }), api("outcomes", { from: state.from, to: state.to })]);
+    state.leads = l.rows || []; state.outcomes = o.rows || []; state.loadedRange = key;
   }
 
-  function inTarget(r) { return !r.province || state.provinces.includes(r.province); }
-
-  function step(dir) {
-    // previous / next morning-email day, single-day view
-    const d = state.days;
-    let i = dir < 0 ? [...d].reverse().find(x => x < state.from) : d.find(x => x > state.to);
-    if (!i) i = addDays(dir < 0 ? state.from : state.to, dir);
-    state.from = state.to = i; loadRange();
+  // ---------------- layout pieces ----------------
+  function renderNav(view) {
+    document.getElementById("nav").innerHTML = VIEWS.map(([k, label, icon]) =>
+      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${label}</a>`).join("");
   }
 
-  function renderHome() {
-    const target = state.items.filter(inTarget), others = state.items.filter(r => !inTarget(r));
-    const counts = { results: state.outcomes.filter(o => o.kind === "result" && o.ours).length, target: target.length, others: others.length };
+  function toolbar({ period = true, area = true } = {}) {
     const single = state.from === state.to;
-    const last = state.days[state.days.length - 1];
-    app.innerHTML = `
-      <div class="card">
-        <div class="datebar">
-          <button class="btn" type="button" id="prev" aria-label="ฉบับก่อนหน้า">◀</button>
-          <input type="date" id="from" value="${state.from}" aria-label="ตั้งแต่วันที่">
-          <span class="sep">ถึง</span>
-          <input type="date" id="to" value="${state.to}" aria-label="ถึงวันที่">
-          <button class="btn" type="button" id="next" aria-label="ฉบับถัดไป">▶</button>
-          <button class="btn small" type="button" data-q="last">ฉบับล่าสุด</button>
-          <button class="btn small" type="button" data-q="7">7 วัน</button>
-          <button class="btn small" type="button" data-q="30">30 วัน</button>
-        </div>
-        <div class="small muted">${single ? `อีเมลเช้าวันที่ ${esc(thDate(state.from))}` : `อีเมลเช้าตั้งแต่ ${esc(thDate(state.from))} ถึง ${esc(thDate(state.to))}`}
-          · วันที่ = วันที่รายการอยู่ในอีเมลเช้า (ข้อมูลของวันทำการก่อนหน้า)${last ? ` · ฉบับล่าสุด ${esc(thDate(last))}` : ""}</div>
-      </div>
-      <div class="tabs" role="tablist">${TABS.map(([k, label]) => `<button class="tab" role="tab" type="button" data-tab="${k}"
-        aria-selected="${state.tab === k}">${label}${counts[k] !== undefined ? ` (${counts[k]})` : ""}</button>`).join("")}</div>
-      <div id="tabbody"></div>`;
-    document.getElementById("prev").onclick = () => step(-1);
-    document.getElementById("next").onclick = () => step(1);
-    const fromEl = document.getElementById("from"), toEl = document.getElementById("to");
-    fromEl.onchange = () => { if (!fromEl.value) return; state.from = fromEl.value; if (state.to < state.from) state.to = state.from; loadRange(); };
-    toEl.onchange = () => { if (!toEl.value) return; state.to = toEl.value; if (state.from > state.to) state.from = state.to; loadRange(); };
-    app.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
-      const end = last || todayISO();
-      if (b.dataset.q === "last") { state.from = state.to = end; }
-      else { state.to = end; state.from = addDays(end, -(Number(b.dataset.q) - 1)); }
-      loadRange();
-    });
-    app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.shown = SHOW; renderHome(); });
-    const body = document.getElementById("tabbody");
-    if (state.tab === "results") renderResults(body);
-    else if (state.tab === "legend") renderLegend(body);
-    else renderItems(body, state.tab === "target" ? target : others, state.tab === "target");
+    const periodText = single ? `อีเมลเช้าวันที่ ${thDate(state.from)}` : `อีเมลเช้า ${thDate(state.from)} – ${thDate(state.to)}`;
+    return `<div class="card toolbar">
+      ${period ? `<div class="toolrow">
+        <div class="seg" role="group" aria-label="ช่วงเวลา">${PRESETS.map(([k, l]) => `<button type="button" data-preset="${k}" aria-pressed="${state.preset === k}">${l}</button>`).join("")}</div>
+        <div class="daterow">
+          ${single ? `<button class="btn sm" type="button" data-step="-1" aria-label="ฉบับก่อนหน้า">◀</button>` : ""}
+          <input type="date" id="from" value="${state.from}" min="${FIRST_DAY}" max="${todayISO()}" aria-label="ตั้งแต่วันที่">
+          <span class="muted">ถึง</span>
+          <input type="date" id="to" value="${state.to}" min="${FIRST_DAY}" max="${todayISO()}" aria-label="ถึงวันที่">
+          ${single ? `<button class="btn sm" type="button" data-step="1" aria-label="ฉบับถัดไป">▶</button>` : ""}
+        </div></div>` : ""}
+      <div class="toolrow">
+        ${area ? `<div class="seg" role="group" aria-label="พื้นที่">${AREA.map(([k, l]) => `<button type="button" data-area="${k}" aria-pressed="${state.area === k}">${l}</button>`).join("")}</div>` : "<span></span>"}
+        <span class="period-label">${period ? esc(periodText) : "แสดงทุก Lead ที่มีการอัปเดตสถานะ ไม่ขึ้นกับช่วงวันที่"}</span>
+      </div></div>`;
   }
 
-  // ---- รายการ tabs ----
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["P0", "แผนจัดซื้อ"], ["W0", "ผลผู้ชนะ"]];
+  function bindToolbar(rerender) {
+    main.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+      if (b.dataset.preset === "custom") { state.preset = "custom"; rerender(false); main.querySelector("#from")?.focus(); return; }
+      applyPreset(b.dataset.preset); rerender(true);
+    });
+    main.querySelectorAll("[data-area]").forEach(b => b.onclick = () => { state.area = b.dataset.area; rerender(false); });
+    const f = main.querySelector("#from"), t = main.querySelector("#to");
+    if (f) f.onchange = () => { if (!f.value) return; state.preset = "custom"; state.from = f.value; if (state.to < state.from) state.to = state.from; rerender(true); };
+    if (t) t.onchange = () => { if (!t.value) return; state.preset = "custom"; state.to = t.value; if (state.from > state.to) state.from = state.to; rerender(true); };
+    main.querySelectorAll("[data-step]").forEach(b => b.onclick = () => {
+      const dir = Number(b.dataset.step), d = state.days;
+      const next = dir < 0 ? [...d].reverse().find(x => x < state.from) : d.find(x => x > state.to);
+      state.from = state.to = next || addDays(state.from, dir); state.preset = "custom"; rerender(true);
+    });
+  }
+
+  // Render a page: toolbar stays put; data loading / errors show below it.
+  async function page(view, build, opts = {}) {
+    const draw = async (reload) => {
+      main.innerHTML = toolbar(opts) + `<div id="body">${reload ? '<div class="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>' : ""}</div>`;
+      bindToolbar(draw);
+      const body = document.getElementById("body");
+      try {
+        if (opts.load) await opts.load();
+        body.innerHTML = "";
+        build(body, draw);
+      } catch (e) { body.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; }
+    };
+    await draw(true);
+  }
+
+  // ---------------- lead card ----------------
+  function leadCard(r) {
+    const left = r.type === "D0" ? daysTo(r.bid_date) : null;
+    const when = r.type === "P0" ? (r.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(r.expected_month))}</span>` : "")
+      : r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${r.bid_time ? " " + esc(r.bid_time) : ""}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : left !== null && left < 0 ? " · ปิดแล้ว" : ""}</span>` : "";
+    const canEdit = state.user && state.user.role === "dv";
+    return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
+      <div style="display:grid;gap:5px;min-width:0">
+        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${scoreBadge(r.score)}${statusPill(r.status, r.status_by, r.status_at)}${resultPill(r.result)}
+          ${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}${r.amended ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
+        <div class="title">${esc(r.title)}</div>
+        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}<span>ประกาศ ${esc(thDate(r.pub_date))}</span></div>
+      </div>
+      <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
+        <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
+        <span class="act btn sm ${canEdit ? "primary" : ""}">${canEdit ? "อัปเดตสถานะ" : "ดูรายละเอียด"}</span></div>
+    </a>`;
+  }
+
+  // ---------------- ภาพรวม ----------------
+  function overview(body) {
+    const leads = state.leads.filter(areaOk);
+    const outs = state.outcomes.filter(o => o.kind === "result");
+    const wins = outs.filter(o => o.ours);                        // our wins count everywhere
+    const noStatus = leads.filter(r => !r.status);
+    const bid = leads.filter(r => r.status === "bid");
+    const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
+      .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
+    const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
+    const byType = ["D0", "B0", "15", "P0"].map(t => [t, leads.filter(r => r.type === t)]);
+    const funnel = [["Lead ทั้งหมด", leads.length], ["มีสถานะแล้ว", leads.filter(r => r.status).length],
+      ["ส่งให้ Mer", leads.filter(r => ["sent_to_mer", "mer_replied", "bid"].includes(r.status)).length],
+      ["ยื่นราคาแล้ว", leads.filter(r => r.status === "bid" || r.result === "lost" || r.result === "win").length],
+      ["ชนะ", leads.filter(r => r.result === "win").length]];
+    const max = Math.max(1, funnel[0][1]);
+    const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
+      <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (อีก ${daysTo(r.bid_date)} วัน)</span>` : ""}</span>
+      <span>${statusPill(r.status)}</span></a>`;
+    body.innerHTML = `
+      <div class="kpis">
+        <a class="kpi" href="${href({ v: "leads" })}"><span class="label">Lead ในช่วงนี้</span><span class="value">${leads.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(leads, "budget_thb"))}</span></a>
+        <a class="kpi alert" href="${href({ v: "leads", status: "none" })}"><span class="label">ยังไม่มีสถานะ</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
+        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (ทุกจังหวัด)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
+          <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
+        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", sort: "budget" })}">ดูทั้งหมด →</a></div>
+          <div>${top.map(mini).join("") || '<div class="empty">ไม่มี Lead ที่ระบุงบ</div>'}</div></div>
+        <div class="card"><h2>ความคืบหน้าของ Lead ในช่วงนี้</h2>
+          <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
+        <div class="card"><h2>Lead แยกตามประเภท</h2>
+          <div class="tbl"><table><thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t })}">${TYPE[t]}</a><div class="small muted">${TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
+          </tbody></table></div></div>
+      </div>`;
+  }
+
+  // ---------------- Lead ----------------
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["P0", "แผนจัดซื้อ"]];
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true], ["none", "ยังไม่มีสถานะ", r => !r.status],
     ["doing", "กำลังทำ", r => ["received", "contacted", "sent_to_mer", "mer_replied", "other"].includes(r.status)],
     ["bid", "ยื่นแล้ว", r => r.status === "bid"], ["no_bid", "ไม่ยื่น", r => r.status === "no_bid"]];
+  const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
+    budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
+    deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
+      return ((x !== null && x >= 0) ? x : 9999) - ((y !== null && y >= 0) ? y : 9999) || b.score - a.score; }],
+    newest: ["ประกาศล่าสุด", (a, b) => String(b.pub_date).localeCompare(String(a.pub_date)) || b.score - a.score] };
 
-  function renderItems(body, all, isTarget) {
-    const q = state.q.trim().toLowerCase();
-    const sf = STATUS_FILTERS.find(f => f[0] === state.status)[2];
-    let rows = all.filter(r => state.type === "all" || r.type === state.type)
-      .filter(r => r.type === "W0" || sf(r))
-      .filter(r => !q || `${r.title} ${r.dept_name} ${r.province || ""} ${r.project_no || ""} ${r.winners || ""}`.toLowerCase().includes(q));
-    if (state.status !== "all") rows = rows.filter(r => r.type !== "W0");
-    rows.sort((a, b) => {   // invitations closing soon first, then by score
-      const da = a.type === "D0" ? daysTo(a.bid_date) : null, db = b.type === "D0" ? daysTo(b.bid_date) : null;
-      const ua = da !== null && da >= 0 ? da : 999, ub = db !== null && db >= 0 ? db : 999;
-      return ua - ub || b.score - a.score;
-    });
-    const typeCount = k => all.filter(r => k === "all" || r.type === k).length;
-    const list = rows.slice(0, state.shown).map(r => {
-      const left = r.type === "D0" ? daysTo(r.bid_date) : null;
-      const when = r.type === "P0" ? (r.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(r.expected_month))}</span>` : "")
-        : r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} ${esc(r.bid_time || "")}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : ""}</span>` : "";
-      const badges = (r.cancelled ? ' <span class="pill bad">ยกเลิกแล้ว</span>' : "") + (r.amended ? ' <span class="pill st">มีการแก้ไขประกาศ</span>' : "");
-      const money2 = r.type === "W0" ? `<span>ผู้ชนะ ${esc(r.winners || "–")} · ${money(r.winner_price)} บาท</span>` : `<span>งบ ${money(r.budget_thb)}</span>`;
-      const side = r.type === "W0"
-        ? (isOurs(r.winners) ? '<span class="pill win">🏆 OfficeMate ชนะ</span>' : "")
-        : `${statusPill(r.status, r.status_by, r.status_at)}${r.result && RESULT[r.result] ? `<span class="pill ${RESULT[r.result][1]}">${RESULT[r.result][0]}</span>` : ""}
-           <a class="btn small primary" href="${leadHref(r.lead_key)}">อัปเดตสถานะ</a>`;
-      return `<div class="row"><div>
-          <div class="meta"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span><span>คะแนน ${r.score}</span>${r.category ? `<span>${esc(r.category)}</span>` : ""}</div>
-          <div class="t"><a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>${badges}</div>
-          <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${money2}${when}
-            <span>ประกาศ ${esc(thDate(r.pub_date))}</span>${state.from !== state.to ? `<span>อีเมล ${esc(thDate(r.email_date))}</span>` : ""}</div>
-          ${r.reason ? `<div class="small muted">${esc(r.reason)}</div>` : ""}
-        </div><div class="side">${side}</div></div>`;
-    }).join("");
+  function leadsPage(body, redraw) {
+    const L = state.l;
+    const area = state.leads.filter(areaOk);
+    const sf = STATUS_FILTERS.find(f => f[0] === L.status)[2];
+    const q = L.q.trim().toLowerCase();
+    const rows = area.filter(r => L.type === "all" || r.type === L.type).filter(sf)
+      .filter(r => !q || `${r.title} ${r.dept_name} ${r.province || ""} ${r.project_no || ""}`.toLowerCase().includes(q))
+      .sort(SORTS[L.sort][1]);
     body.innerHTML = `
-      <div class="card" style="margin-top:10px">
-        <div class="chips" role="group" aria-label="ประเภทประกาศ">${TYPE_FILTERS.map(([k, l]) =>
-          `<button class="chip" type="button" data-type="${k}" aria-pressed="${state.type === k}">${l} ${typeCount(k)}</button>`).join("")}</div>
-        ${isTarget ? `<div class="chips" role="group" aria-label="สถานะ">${STATUS_FILTERS.map(([k, l]) =>
-          `<button class="chip" type="button" data-status="${k}" aria-pressed="${state.status === k}">${l}</button>`).join("")}</div>` : ""}
-        <div class="tools">
-          <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด ผู้ชนะ" value="${esc(state.q)}" aria-label="ค้นหา">
-          <button class="btn" type="button" id="dl">⬇ ดาวน์โหลด Excel</button>
+      <div class="card">
+        <div class="chips" role="group" aria-label="ประเภท">${TYPE_FILTERS.map(([k, l]) =>
+          `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(r => k === "all" || r.type === k).length}</span></button>`).join("")}</div>
+        <div class="chips" role="group" aria-label="สถานะ">${STATUS_FILTERS.map(([k, l, f]) =>
+          `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(f).length}</span></button>`).join("")}</div>
+        <div class="toolrow">
+          <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด เลขโครงการ" value="${esc(L.q)}" aria-label="ค้นหา">
+          <div class="daterow"><label class="small muted" for="sort">เรียง</label>
+            <select id="sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${L.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+            <button class="btn" type="button" id="dl">⬇ Excel</button></div>
         </div>
-        <div class="small muted">${isTarget ? "จังหวัดเป้าหมาย 15 จังหวัด และประกาศที่ระบุจังหวัดไม่ได้ (ส่วนใหญ่เป็นหน่วยงานส่วนกลาง)" : "ประกาศที่ระบุได้ว่าอยู่นอก 15 จังหวัดเป้าหมาย"}
-          · แสดง ${Math.min(rows.length, state.shown)} จาก ${rows.length} รายการ</div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} รายการ · งบรวม ${short(sum(rows, "budget_thb"))}</div>
       </div>
-      <div class="list" style="margin-top:10px">${list || '<div class="card empty">ไม่มีรายการในวันที่และตัวกรองนี้</div>'}</div>
-      ${rows.length > state.shown ? `<div style="text-align:center;margin-top:10px"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - state.shown})</button></div>` : ""}`;
-    body.querySelectorAll("[data-type]").forEach(b => b.onclick = () => { state.type = b.dataset.type; state.shown = SHOW; renderHome(); });
-    body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { state.status = b.dataset.status; state.shown = SHOW; renderHome(); });
+      <div class="list">${rows.slice(0, L.shown).map(leadCard).join("") || '<div class="card empty">ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่</div>'}</div>
+      ${rows.length > L.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - L.shown})</button></div>` : ""}`;
+    body.querySelectorAll("[data-type]").forEach(b => b.onclick = () => { L.type = b.dataset.type; L.shown = 60; leadsPage(body, redraw); });
+    body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { L.status = b.dataset.status; L.shown = 60; leadsPage(body, redraw); });
+    document.getElementById("sort").onchange = e => { L.sort = e.target.value; leadsPage(body, redraw); };
     const qi = document.getElementById("q");
-    qi.oninput = () => { state.q = qi.value; const pos = qi.selectionStart; renderHome();
-      const n = document.getElementById("q"); n.focus(); n.setSelectionRange(pos, pos); };
-    const more = document.getElementById("more"); if (more) more.onclick = () => { state.shown += SHOW; renderHome(); };
-    document.getElementById("dl").onclick = () => download(isTarget ? "กทม_ปริมณฑล" : "จังหวัดอื่น", rows.map(r => ({
-      "วันที่ในอีเมล": r.email_date, "คะแนน": r.score, "ประเภทประกาศ": `${TYPE[r.type] || r.type} (${r.type})`, "ชื่อโครงการ": r.title,
-      "หน่วยงาน": r.dept_name, "จังหวัด": r.province || "", "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
-      "งบประมาณ (บาท)": r.budget_thb === null ? "" : Number(r.budget_thb), "ผู้ชนะ": r.winners || "",
-      "ราคาที่ชนะ (บาท)": r.winner_price === null ? "" : Number(r.winner_price), "วันยื่นซอง": r.bid_date || "", "เวลายื่น": r.bid_time || "",
-      "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "วิธีจัดหา": r.method || "",
-      "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "", "มีการแก้ไขประกาศ": r.amended ? "ใช่" : "",
-      "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : "", "ผล": r.result && RESULT[r.result] ? RESULT[r.result][0].replace("🏆 ", "") : "",
-      "ลิงก์": r.link })));
+    qi.oninput = () => { L.q = qi.value; const p = qi.selectionStart; leadsPage(body, redraw); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(p, p); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { L.shown += 60; leadsPage(body, redraw); };
+    document.getElementById("dl").onclick = () => download(`Lead_${AREA.find(a => a[0] === state.area)[1]}`, rows.map(r => ({
+      "วันที่ในอีเมล": r.email_date, "ประเภทประกาศ": TYPE[r.type], "คะแนน": r.score, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name,
+      "จังหวัด": r.province || "", "งบประมาณ (บาท)": num(r.budget_thb) ?? "", "วันยื่นซอง": r.bid_date || "", "เวลายื่น": r.bid_time || "",
+      "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
+      "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
+      "ผู้ชนะ": r.winners || "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "",
+      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || "", "ลิงก์": r.link })));
   }
 
-  // ---- ผลลัพธ์ tab ----
-  function renderResults(body) {
-    const res = state.outcomes.filter(o => o.kind === "result");
-    const wins = res.filter(o => o.ours).sort((a, b) => (b.winner_price || 0) - (a.winner_price || 0));
-    const leadRes = res.filter(o => o.lead_types);
-    const lost = leadRes.filter(o => !o.ours && inTarget(o)).sort((a, b) => (b.winner_price || 0) - (a.winner_price || 0));
-    const cancelled = state.outcomes.filter(o => o.kind === "cancelled" && inTarget(o));
+  // ---------------- ติดตามสถานะ ----------------
+  const COLUMNS = [["กำลังดำเนินการ", r => ["received", "contacted", "other"].includes(r.status) && !r.result],
+    ["รอ Mer", r => r.status === "sent_to_mer" && !r.result], ["Mer ตอบแล้ว", r => r.status === "mer_replied" && !r.result],
+    ["ยื่นราคาแล้ว รอผล", r => r.status === "bid" && !r.result], ["มีผลแล้ว", r => !!r.result], ["ไม่ยื่น", r => r.status === "no_bid" && !r.result]];
+
+  function tracking(body) {
+    const rows = state.tracking.filter(areaOk);
+    const card = r => `<a class="tcard" href="${href({ lead: r.lead_key, from: "tracking" })}">
+      <span class="t">${esc(r.title || r.lead_key)}</span>
+      <span class="meta"><span class="amt">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>${r.bid_date ? `<span class="${daysTo(r.bid_date) !== null && daysTo(r.bid_date) >= 0 && daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}</span>` : ""}</span>
+      <span class="small muted">${esc(r.dept_name || "")} · ${esc(r.province || "ไม่ระบุจังหวัด")}</span>
+      <span class="badges" style="display:flex;flex-wrap:wrap;gap:4px">${statusPill(r.status)}${resultPill(r.result)}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</span>
+      <span class="small muted">${esc(r.status_by || "")} · ${esc(thTime(r.status_at))}${r.reasons && r.reasons.length ? " · " + esc(r.reasons.join(", ")) : ""}</span></a>`;
+    // On a phone the columns become one list at a time, picked with the chips (CSS hides the others).
+    if (state.tcol === undefined) state.tcol = Math.max(0, COLUMNS.findIndex(([, f]) => rows.some(f)));
+    body.innerHTML = rows.length ? `
+      <div class="chips colpick" role="group" aria-label="ขั้น">${COLUMNS.map(([label, f], i) =>
+        `<button class="chip" type="button" data-col="${i}" aria-pressed="${state.tcol === i}">${label}<span class="n">${rows.filter(f).length}</span></button>`).join("")}</div>
+      <div class="board">${COLUMNS.map(([label, f], i) => { const rs = rows.filter(f);
+        return `<div class="col ${state.tcol === i ? "on" : ""}"><h3><span>${label}</span><span class="muted">${rs.length}</span></h3>${rs.map(card).join("") || '<div class="small muted">–</div>'}</div>`; }).join("")}</div>`
+      : `<div class="card empty">ยังไม่มี Lead ที่อัปเดตสถานะ${state.area !== "all" ? "ในพื้นที่นี้" : ""} · เปิดหน้า Lead แล้วกด “อัปเดตสถานะ”</div>`;
+    body.querySelectorAll("[data-col]").forEach(b => b.onclick = () => { state.tcol = Number(b.dataset.col); tracking(body); });
+  }
+
+  // ---------------- ผลลัพธ์ ----------------
+  function results(body, redraw) {
+    const R = state.r;
+    const outs = state.outcomes;
+    const res = outs.filter(o => o.kind === "result");
+    const wins = res.filter(o => o.ours).sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
+    const leadRes = res.filter(o => o.lead_types && areaOk(o));
+    const lost = leadRes.filter(o => !o.ours).sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
+    const cancelled = outs.filter(o => o.kind === "cancelled" && areaOk(o));
     const rivals = {};
-    res.filter(o => !o.ours && inTarget(o) && o.winners).forEach(o => {
-      const r = rivals[o.winners] || (rivals[o.winners] = { n: 0, v: 0 }); r.n++; r.v += Number(o.winner_price || 0); });
+    res.filter(o => !o.ours && areaOk(o) && o.winners).forEach(o => { const r = rivals[o.winners] || (rivals[o.winners] = { n: 0, v: 0 }); r.n++; r.v += num(o.winner_price) || 0; });
     const top = Object.entries(rivals).sort((a, b) => b[1].n - a[1].n || b[1].v - a[1].v).slice(0, 10);
-    const winValue = wins.reduce((s, o) => s + Number(o.winner_price || 0), 0);
+    const q = R.q.trim().toLowerCase();
+    const all = res.filter(areaOk).filter(o => !q || `${o.title} ${o.dept_name} ${o.winners} ${o.province || ""}`.toLowerCase().includes(q))
+      .sort((a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0));
     const proj = o => `<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.title)}</a>`;
     const where = o => `${esc(o.dept_name || "")}<div class="small muted">${esc(o.province || "ไม่ระบุจังหวัด")}</div>`;
-    const table = (head, rows) => rows.length ? `<div class="tbl"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>
-      <tbody>${rows.join("")}</tbody></table></div>` : '<div class="small muted">ไม่มีรายการ</div>';
-    body.innerHTML = `<div style="display:grid;gap:12px;margin-top:10px">
-      <div class="summary"><b>OfficeMate ชนะ ${wins.length} รายการ มูลค่า ${money(winValue)} บาท</b> (ทุกจังหวัด) ·
-        Lead ที่ประกาศผลแล้ว ${leadRes.length} รายการ: เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length} · Lead ถูกยกเลิก ${cancelled.length}</div>
-      <div class="small muted">ระบบตรวจเองจากประกาศผู้ชนะ (W0) และประกาศยกเลิก (D1) ที่อยู่ในอีเมลช่วงวันที่ที่เลือก นับเฉพาะประกาศผู้ชนะในหมวดสินค้าของเรา (คะแนน ≥ 50) ที่ระบบอ่านแล้ว</div>
-      <div class="card"><h3>OfficeMate ชนะ</h3>${table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ (บาท)", "มาจาก Lead"],
-        wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num">${money(o.winner_price)}</td>
+    const table = (head, rows) => rows.length ? `<div class="tbl"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`
+      : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>';
+    body.innerHTML = `
+      <div class="kpis">
+        <div class="kpi win"><span class="label">OfficeMate ชนะ (ทุกจังหวัด)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${baht(sum(wins, "winner_price"))}</span></div>
+        <div class="kpi"><span class="label">Lead ที่ประกาศผลแล้ว</span><span class="value">${leadRes.length}</span><span class="sub">เราชนะ ${leadRes.filter(o => o.ours).length}</span></div>
+        <div class="kpi alert"><span class="label">Lead ที่บริษัทอื่นชนะ</span><span class="value">${lost.length}</span><span class="sub">มูลค่า ${short(sum(lost, "winner_price"))}</span></div>
+        <div class="kpi"><span class="label">Lead ถูกยกเลิก</span><span class="value">${cancelled.length}</span><span class="sub">ประกาศยกเลิก (D1)</span></div>
+      </div>
+      <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">นับทุกจังหวัด รวมงานที่ไม่ได้มาจาก Lead</span></div>
+        ${table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"], wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
           <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี (เช่น เฉพาะเจาะจง)</span>'}</td></tr>`))}</div>
-      <div class="card"><h3>Lead ที่บริษัทอื่นชนะ</h3>${table(["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ (บาท)", "งบ (บาท)"],
-        lost.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td>${esc(o.winners)}</td><td class="num">${money(o.winner_price)}</td><td class="num">${money(o.budget_thb)}</td></tr>`))}</div>
-      <div class="card"><h3>Lead ที่ถูกยกเลิก</h3>${table(["โครงการ", "หน่วยงาน", "งบ (บาท)"],
-        cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num">${money(o.budget_thb)}</td></tr>`))}</div>
-      <div class="card"><h3>คู่แข่งที่ชนะบ่อย <span class="small muted">(จังหวัดเป้าหมายและไม่ระบุจังหวัด)</span></h3>${table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม (บาท)"],
-        top.map(([n, r]) => `<tr><td>${esc(n)}</td><td class="num">${r.n}</td><td class="num">${money(r.v)}</td></tr>`))}</div>
-      <div><button class="btn" type="button" id="dl">⬇ ดาวน์โหลด Excel (ผลทั้งหมด ${state.outcomes.length} รายการ)</button></div>
-    </div>`;
-    document.getElementById("dl").onclick = () => download("ผลลัพธ์", state.outcomes.map(o => ({
+      <div class="grid2">
+        <div class="card"><h2>Lead ที่บริษัทอื่นชนะ</h2>${table(["โครงการ", "ผู้ชนะ", "ราคาที่ชนะ"],
+          lost.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · งบ ${baht(o.budget_thb)}</div></td><td>${esc(o.winners)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}</div>
+        <div class="card"><h2>คู่แข่งที่ชนะบ่อย</h2>${table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม"],
+          top.map(([n, r]) => `<tr><td>${esc(n)}</td><td class="num">${r.n}</td><td class="num money">${short(r.v)}</td></tr>`))}</div>
+      </div>
+      ${cancelled.length ? `<div class="card"><h2>Lead ที่ถูกยกเลิก</h2>${table(["โครงการ", "หน่วยงาน", "งบ"], cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))}</div>` : ""}
+      <div class="card"><div class="section-head"><h2>ประกาศผู้ชนะทั้งหมด</h2><span class="small muted">${all.length.toLocaleString("th-TH")} รายการ · หมวดสินค้าของเรา (คะแนน ≥ 50)</span></div>
+        <div class="toolrow"><input class="txt" id="rq" type="search" placeholder="ค้นหาโครงการ หน่วยงาน ผู้ชนะ" value="${esc(R.q)}" aria-label="ค้นหาผลผู้ชนะ">
+          <button class="btn" type="button" id="dl">⬇ Excel</button></div>
+        ${table(["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ"], all.slice(0, R.shown).map(o => `<tr><td>${proj(o)}<div class="small muted">ประกาศ ${esc(thDate(o.pub_date))}</div></td><td>${where(o)}</td>
+          <td>${isOurs(o.winners) ? '<span class="pill win">OfficeMate</span>' : esc(o.winners)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
+        ${all.length > R.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${all.length - R.shown})</button></div>` : ""}</div>`;
+    const qi = document.getElementById("rq");
+    qi.oninput = () => { R.q = qi.value; const p = qi.selectionStart; results(body, redraw); const n = document.getElementById("rq"); n.focus(); n.setSelectionRange(p, p); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { R.shown += 100; results(body, redraw); };
+    document.getElementById("dl").onclick = () => download("ผลลัพธ์", outs.filter(areaOk).map(o => ({
       "วันที่ในอีเมล": o.email_date, "ผลลัพธ์": o.kind === "cancelled" ? "Lead ถูกยกเลิก" : o.ours ? "OfficeMate ชนะ" : o.lead_types ? "บริษัทอื่นชนะ (เคยเป็น Lead)" : "บริษัทอื่นชนะ",
-      "ชื่อโครงการ": o.title, "หน่วยงาน": o.dept_name, "จังหวัด": o.province || "", "ผู้ชนะ": o.winners || "",
-      "ราคาที่ชนะ (บาท)": o.winner_price === null ? "" : Number(o.winner_price), "งบประมาณ (บาท)": o.budget_thb === null ? "" : Number(o.budget_thb),
-      "เคยส่งเป็น Lead (ประเภท)": (o.lead_types || []).join(", "), "วันที่ประกาศ": o.pub_date, "เลขโครงการ": o.project_no || "", "ลิงก์": o.link })));
+      "ชื่อโครงการ": o.title, "หน่วยงาน": o.dept_name, "จังหวัด": o.province || "", "ผู้ชนะ": o.winners || "", "ราคาที่ชนะ (บาท)": num(o.winner_price) ?? "",
+      "งบประมาณ (บาท)": num(o.budget_thb) ?? "", "เคยส่งเป็น Lead (ประเภท)": (o.lead_types || []).map(t => TYPE[t] || t).join(", "),
+      "วันที่ประกาศ": o.pub_date, "เลขโครงการ": o.project_no || "", "ลิงก์": o.link })));
   }
 
-  // ---- คำอธิบาย tab ----
-  function renderLegend(body) {
-    body.innerHTML = `<div class="two" style="margin-top:10px">
-      <div class="card legend"><h3>ประเภทประกาศ</h3><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
-        <h3>คะแนน (ความตรงกับสินค้า OfficeMate)</h3><dl>${SCORE_BANDS.map(([b, d]) => `<dt>${b}</dt><dd>${d}</dd>`).join("")}</dl>
-        <p class="small muted">แสดงเฉพาะคะแนน 50 ขึ้นไป</p></div>
-      <div class="card legend"><h3>สถานะ (DV กดบันทึก)</h3><dl>
-        <dt>${STATUS.received}</dt><dd>เห็นแล้ว กำลังพิจารณา</dd>
-        <dt>${STATUS.contacted}</dt><dd>โทร นัด หรือเข้าพบหน่วยงาน</dd>
-        <dt>${STATUS.sent_to_mer}</dt><dd>ขอราคาทุน/เช็คสต็อกกับ Merchandise</dd>
-        <dt>${STATUS.mer_replied}</dt><dd>ได้ราคาทุน/สต็อกแล้ว</dd>
-        <dt>${STATUS.bid}</dt><dd>ยื่นราคาในระบบ e-GP แล้ว (ใส่ราคาที่ยื่นได้)</dd>
-        <dt>${STATUS.no_bid}</dt><dd>ไม่ไปต่อ พร้อมเหตุผล</dd>
-        <dt>${STATUS.other}</dt><dd>เรื่องอื่น ต้องใส่หมายเหตุ</dd></dl>
-        <h3>ผลที่ระบบตรวจเอง</h3><dl>
-        <dt>🏆 OfficeMate ชนะ</dt><dd>ประกาศผู้ชนะระบุ บริษัท ออฟฟิศเมท (ไทย) จำกัด</dd>
-        <dt>แพ้</dt><dd>DV กดว่ายื่นราคาแล้ว แต่บริษัทอื่นชนะ</dd>
-        <dt>บริษัทอื่นชนะ</dt><dd>บริษัทอื่นชนะ และไม่มีบันทึกว่าเรายื่นราคา</dd></dl>
-        <h3>วันที่</h3><dl><dt>วันที่ในปฏิทิน</dt><dd>วันที่ของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า)</dd>
-        <dt>งบประมาณ</dt><dd>ราคากลางจากเอกสารประกาศ หรืองบจากหน้าแผนจัดซื้อ ประกาศผู้ชนะแบบเฉพาะเจาะจงมักไม่มี ให้ดูราคาที่ชนะ</dd></dl></div>
-    </div>`;
+  // ---------------- คู่มือ ----------------
+  function guide() {
+    main.innerHTML = `<div class="grid2">
+      <div class="card legend"><h2>หน้าต่าง ๆ</h2><dl>
+        <dt>ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานที่ใกล้ปิดรับซอง Lead งบสูงสุด และความคืบหน้า</dd>
+        <dt>Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) เรียงคะแนนสูงสุดแล้วงบสูงสุด กดการ์ดเพื่ออัปเดตสถานะ</dd>
+        <dt>ติดตามสถานะ</dt><dd>Lead ที่มีการอัปเดตสถานะแล้ว แยกตามขั้น ไม่ขึ้นกับช่วงวันที่</dd>
+        <dt>ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด</dd></dl>
+        <h2>ช่วงเวลาและพื้นที่</h2><dl>
+        <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
+        <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd></dl></div>
+      <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
+        <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 90–100</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
+        <dt>${scoreBadge(75)} 75–89</dt><dd>คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
+        <dt>${scoreBadge(60)} 60–74</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
+        <dt>${scoreBadge(50)} 50–59</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
+        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt>`).join("")}</dl>
+        <p class="small muted">DV เป็นผู้อัปเดตสถานะ ผลแพ้/ชนะระบบตรวจเองจากประกาศผู้ชนะ</p></div></div>`;
   }
 
   // ---------------- one lead ----------------
   let current = null;
 
-  async function showLead(key) {
-    app.innerHTML = '<div class="card empty">กำลังโหลด Lead…</div>';
+  async function showLead(key, from) {
+    main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>`;
     try {
       const data = await api("lead", { key });
-      current = { key, data, status: null, reasons: new Set() };
+      current = { key, from: from || "leads", data, status: null, reasons: new Set() };
       renderLead();
-    } catch (e) { fail(e); }
+    } catch (e) { main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="card empty error">${esc(e.message)}</div>`; }
   }
 
   function leadSummary(anns) {
     const order = ["D0", "B0", "15", "P0"];
-    const main = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).find(a => order.includes(a.type)) || anns[0];
-    const pick = k => anns.map(a => a[k]).filter(v => v !== null && v !== undefined && v !== "");
-    const budget = Math.max(...pick("budget_thb").map(Number), -1);
-    const d0 = anns.find(a => a.type === "D0" && a.bid_date);
-    const w0 = [...anns].reverse().find(a => a.type === "W0" && Array.isArray(a.winners) && a.winners.length);
-    const tor = anns.find(a => a.type === "B0") || anns.find(a => a.type === "D0") || main;
-    return { main, budget: budget >= 0 ? budget : null, d0, w0, tor, province: pick("province")[0] || "" };
+    const main0 = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).find(a => order.includes(a.type)) || anns[0];
+    const budgets = anns.map(a => num(a.budget_thb)).filter(v => v !== null);
+    return { main: main0, budget: budgets.length ? Math.max(...budgets) : null, d0: anns.find(a => a.type === "D0" && a.bid_date),
+      w0: [...anns].reverse().find(a => a.type === "W0" && Array.isArray(a.winners) && a.winners.length),
+      tor: anns.find(a => a.type === "B0") || anns.find(a => a.type === "D0") || main0,
+      province: anns.map(a => a.province).find(Boolean) || "" };
   }
 
   function merText(s) {
     const m = s.main;
-    const lines = [`[ขอเช็คสินค้า] ${m.project_no ? `e-GP ${m.project_no}` : `แผน ${m.plan_no}`}`, m.title,
-      `หน่วยงาน: ${m.dept_name}${s.province ? ` (${s.province})` : ""}`];
-    const parts = [s.budget !== null ? `งบประมาณ: ${money(s.budget)} บาท` : "",
-      s.d0 ? `ยื่นซอง ${thDate(s.d0.bid_date)}${s.d0.bid_time ? " " + s.d0.bid_time : ""}` : ""].filter(Boolean);
+    const lines = [`[ขอเช็คสินค้า] ${m.project_no ? `e-GP ${m.project_no}` : `แผน ${m.plan_no}`}`, m.title, `หน่วยงาน: ${m.dept_name}${s.province ? ` (${s.province})` : ""}`];
+    const parts = [s.budget !== null ? `งบประมาณ: ${money(s.budget)} บาท` : "", s.d0 ? `ยื่นซอง ${thDate(s.d0.bid_date)}${s.d0.bid_time ? " " + s.d0.bid_time : ""}` : ""].filter(Boolean);
     if (parts.length) lines.push(parts.join(" · "));
     lines.push("ขอ: ราคาทุน + สต็อก ภายใน ____", `เอกสาร/TOR: ${s.tor.link}`);
     return lines.join("\n");
@@ -435,68 +612,52 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
 
   function renderLead() {
     const { data } = current;
-    const anns = data.announcements;
-    const s = leadSummary(anns);
-    const isDV = data.user.role === "dv";
-    const events = data.events || [];
-    const last = events[events.length - 1];
+    const anns = data.announcements, s = leadSummary(anns), isDV = data.user.role === "dv";
+    const events = data.events || [], last = events[events.length - 1];
     const left = s.d0 ? daysTo(s.d0.bid_date) : null;
-    const outcome = s.w0
-      ? (isOurs(s.w0.winners.join(", ")) ? `<span class="pill win">🏆 OfficeMate ชนะ · ${money(s.w0.winner_price)} บาท</span>`
-        : `<span class="pill bad">ผู้ชนะ: ${esc(s.w0.winners.join(", "))} · ${money(s.w0.winner_price)} บาท</span>`)
-      : anns.some(a => a.type === "D1") ? '<span class="pill">ยกเลิกโครงการ</span>' : "";
-    const annList = anns.map(a => `<div class="ann">
-        <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
-        <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
-        <div class="meta">${a.budget_thb ? `<span>งบ ${money(a.budget_thb)}</span>` : ""}
-          ${a.bid_date ? `<span>ยื่นซอง ${esc(thDate(a.bid_date))} ${esc(a.bid_time || "")}</span>` : ""}
-          ${a.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(a.expected_month))}</span>` : ""}
-          ${Array.isArray(a.winners) && a.winners.length ? `<span>ผู้ชนะ ${esc(a.winners.join(", "))} · ${money(a.winner_price)}</span>` : ""}
-          ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("");
-    const form = isDV ? `<div class="card" id="form">
-        <h3>อัปเดตสถานะ</h3>
-        ${GROUPS.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">
-          ${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}
-        </div></div>`).join("")}
+    const outcome = s.w0 ? (isOurs(s.w0.winners.join(", ")) ? `<span class="pill win">🏆 OfficeMate ชนะ · ${baht(s.w0.winner_price)}</span>`
+        : `<span class="pill bad">ผู้ชนะ: ${esc(s.w0.winners.join(", "))} · ${baht(s.w0.winner_price)}</span>`)
+      : anns.some(a => a.type === "D1") ? '<span class="pill bad">ยกเลิกโครงการ</span>' : "";
+    const form = isDV ? `<div class="card" id="form"><h2>อัปเดตสถานะ</h2>
+        ${GROUPS.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}</div></div>`).join("")}
         <div class="group" id="reasons" ${current.status === "no_bid" ? "" : "hidden"}><span>เหตุผลที่ไม่ยื่น (เลือกได้หลายข้อ)</span>
           <div class="chips">${REASONS.map(r => `<button class="chip reason" type="button" aria-pressed="${current.reasons.has(r)}">${r}</button>`).join("")}</div></div>
-        <label class="fld" id="pricebox" ${current.status === "bid" ? "" : "hidden"}>ราคาที่ยื่น (บาท) ไม่บังคับ
-          <input class="txt" id="price" inputmode="decimal" placeholder="เช่น 1,180,000"></label>
-        <label class="fld">หมายเหตุ <span id="notehint">${current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)"}</span>
-          <textarea id="note" rows="2" placeholder="เช่น นัดคุยฝ่ายพัสดุวันพฤหัส"></textarea></label>
-        <div><button class="btn primary" type="button" id="save">บันทึก</button></div>
-        <div class="msg" id="msg" aria-live="polite"></div>
-      </div>` : "";
-    app.innerHTML = `
-      <div><a href="${homeHref()}">← กลับไปรายการ</a></div>
-      <div class="card">
-        <h2>${esc(s.main.title)}</h2>
-        <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span><span>งบ ${money(s.budget)} บาท</span>
-          ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : ""}</span>` : ""}
-          <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span></div>
-        <div class="chips">${statusPill(last && last.status, last && last.by, last && last.at)}${outcome}</div>
+        <label class="fld" id="pricebox" ${current.status === "bid" ? "" : "hidden"}>ราคาที่ยื่น (บาท) ไม่บังคับ<input class="txt" id="price" inputmode="decimal" placeholder="เช่น 1,180,000"></label>
+        <label class="fld">หมายเหตุ <span id="notehint">${current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)"}</span><textarea id="note" rows="2" placeholder="เช่น นัดคุยฝ่ายพัสดุวันพฤหัส"></textarea></label>
+        <div><button class="btn primary" type="button" id="save">บันทึก</button></div><div class="msg" id="msg" aria-live="polite"></div></div>` : "";
+    main.innerHTML = `
+      <div><a href="${href({ v: current.from })}">← กลับ</a></div>
+      <div class="card hero">
+        <div style="display:grid;gap:6px;min-width:0">
+          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${statusPill(last && last.status)}${outcome}</div>
+          <h1>${esc(s.main.title)}</h1>
+          <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
+            ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · อีก ${left} วัน` : ""}</span>` : ""}
+            <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span></div>
+        </div>
+        <div><div class="small muted amt-label">งบประมาณ</div><div class="amt">${s.budget === null ? '<span class="muted" style="font-size:16px">ไม่ระบุงบ</span>' : baht(s.budget)}</div></div>
       </div>
       <div class="two">
-        <div style="display:grid;gap:12px">${form}
-          <div class="card"><h3>ประวัติ</h3><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}</div>
-            <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + money(e.bid_price) + " บาท" : ""}</div>
+        <div style="display:grid;gap:14px">${form}
+          <div class="card"><h2>ประวัติ</h2><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}</div>
+            <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + baht(e.bid_price) : ""}</div>
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
         </div>
-        <div style="display:grid;gap:12px">
-          <div class="card"><h3>ข้อความส่งให้ Mer</h3>
-            <div class="small muted">คัดลอกไปวางใน LINE / Teams / Email แล้วกดสถานะ “ส่งให้ Mer”</div>
-            <pre class="mer" id="mertext">${esc(merText(s))}</pre>
-            <div><button class="btn" type="button" id="copy">คัดลอกข้อความ</button></div>
-            <div class="msg" id="copymsg" aria-live="polite"></div></div>
-          <div class="card"><h3>ประกาศของโครงการนี้</h3><div class="anns">${annList}</div></div>
+        <div style="display:grid;gap:14px">
+          <div class="card"><h2>ข้อความส่งให้ Mer</h2><div class="small muted">คัดลอกไปวางใน LINE / Teams / Email แล้วกดสถานะ “ส่งให้ Mer”</div>
+            <pre class="mer" id="mertext">${esc(merText(s))}</pre><div><button class="btn" type="button" id="copy">คัดลอกข้อความ</button></div><div class="msg" id="copymsg" aria-live="polite"></div></div>
+          <div class="card"><h2>ประกาศของโครงการนี้</h2><div>${anns.map(a => `<div class="ann">
+            <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
+            <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
+            <div class="meta">${num(a.budget_thb) !== null ? `<span>งบ ${baht(a.budget_thb)}</span>` : ""}${a.bid_date ? `<span>ยื่นซอง ${esc(thDate(a.bid_date))} ${esc(a.bid_time || "")}</span>` : ""}
+              ${a.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(a.expected_month))}</span>` : ""}${Array.isArray(a.winners) && a.winners.length ? `<span>ผู้ชนะ ${esc(a.winners.join(", "))} · ${baht(a.winner_price)}</span>` : ""}
+              ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("")}</div></div>
         </div>
       </div>`;
     document.getElementById("copy").onclick = () => {
       const el = document.getElementById("mertext"), cm = document.getElementById("copymsg");
-      const fallback = () => { const r = document.createRange(); r.selectNodeContents(el);
-        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); cm.textContent = "เลือกข้อความให้แล้ว กด Ctrl+C เพื่อคัดลอก"; };
-      try { navigator.clipboard.writeText(el.textContent).then(() => { cm.className = "msg ok"; cm.textContent = "คัดลอกแล้ว"; }, fallback); }
-      catch (e) { fallback(); }
+      const fallback = () => { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); cm.textContent = "เลือกข้อความให้แล้ว กด Ctrl+C เพื่อคัดลอก"; };
+      try { navigator.clipboard.writeText(el.textContent).then(() => { cm.className = "msg ok"; cm.textContent = "คัดลอกแล้ว"; }, fallback); } catch (e) { fallback(); }
     };
     if (!isDV) return;
     const f = document.getElementById("form");
@@ -509,13 +670,11 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
       document.getElementById("msg").textContent = "";
     });
     f.querySelectorAll(".reason").forEach(c => c.onclick = () => {
-      const r = c.textContent;
-      if (current.reasons.has(r)) current.reasons.delete(r); else current.reasons.add(r);
+      const r = c.textContent; if (current.reasons.has(r)) current.reasons.delete(r); else current.reasons.add(r);
       c.setAttribute("aria-pressed", String(current.reasons.has(r)));
     });
     document.getElementById("save").onclick = async () => {
-      const msg = document.getElementById("msg"), btn = document.getElementById("save");
-      const note = document.getElementById("note").value.trim();
+      const msg = document.getElementById("msg"), btn = document.getElementById("save"), note = document.getElementById("note").value.trim();
       const err = t => { msg.className = "msg err"; msg.textContent = t; };
       if (!current.status) return err("เลือกสถานะก่อน แล้วกดบันทึก");
       if (current.status === "no_bid" && !current.reasons.size) return err("เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ");
@@ -525,24 +684,39 @@ pre.mer { margin: 0; white-space: pre-wrap; font-family: var(--font); font-size:
         const res = await api("save", { key: current.key, status: current.status, reasons: [...current.reasons],
           bid_price: current.status === "bid" ? document.getElementById("price").value.trim() : null, note });
         current.data.events = res.events; current.status = null; current.reasons = new Set();
-        state.items = null;   // the lists show the new status next time
+        state.loadedRange = ""; state.tracking = null;     // lists show the new status next time
         renderLead();
         const m = document.getElementById("msg"); m.className = "msg ok"; m.textContent = "บันทึกแล้ว";
       } catch (e) { btn.disabled = false; err(e.message); }
     };
   }
 
-  function route() {
-    const { t, lead } = params();
-    if (!/^[0-9a-f]{64}$/.test(t)) {
-      app.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert</div>';
+  // ---------------- routing ----------------
+  let currentView = "overview";
+
+  async function route() {
+    const p = hashParams();
+    if (!/^[0-9a-f]{64}$/.test(token())) {
+      renderNav(null);
+      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert</div>';
       return;
     }
     window.scrollTo(0, 0);
-    if (lead) showLead(lead);
-    else if (state.items && state.days.length) renderHome();
-    else if (state.days.length) loadRange();
-    else showHome();
+    const lead = p.get("lead");
+    const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "overview";
+    if (p.get("status")) state.l.status = p.get("status");
+    if (p.get("type")) state.l.type = p.get("type");
+    if (p.get("sort")) state.l.sort = p.get("sort");
+    if (lead) { renderNav(p.get("from") || "leads"); return showLead(lead, p.get("from")); }
+    currentView = view;
+    renderNav(view);
+    try {
+      if (!state.days.length) { state.days = (await api("days")).days || []; applyPreset(state.preset); }
+    } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    if (view === "guide") return guide();
+    if (view === "tracking") return page(view, tracking, { period: false, load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
+    const build = { overview, leads: leadsPage, results }[view];
+    return page(view, build, { load: ensureRange });
   }
   addEventListener("hashchange", route);
   route();
