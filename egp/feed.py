@@ -39,7 +39,7 @@ METHODS = {
 }
 
 _session = requests.Session()
-_session.headers["User-Agent"] = "Mozilla/5.0 (prospecting-automated-3)"
+_session.headers["User-Agent"] = "Mozilla/5.0 (prospecting-automated-kg)"
 
 
 @dataclass

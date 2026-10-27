@@ -27,7 +27,7 @@ from egp.db import DB  # noqa: E402
 
 BKK = ZoneInfo("Asia/Bangkok")
 # KG Lead Loop web app (GitHub Pages, .github/workflows/pages.yml).
-LEAD_APP_URL = os.environ.get("LEAD_APP_URL") or "https://schartwu.github.io/prospecting-automated-3/"
+LEAD_APP_URL = os.environ.get("LEAD_APP_URL") or "https://schartwu.github.io/prospecting-automated-kg/"
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 # Bangkok, its surrounding provinces and the east: the area the Sales team covers (2026-10-19).
 DEFAULT_PROVINCES = ("กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, "

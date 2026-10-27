@@ -478,7 +478,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <span>${statusPill(r.status)}</span></a>`;
     body.innerHTML = `
       <div class="kpis">
-        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview" })}"><span class="label">Lead ในช่วงนี้ (โครงการ)</span><span class="value">${leads.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(leads, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview" })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview" })}"><span class="label">ยังไม่มีสถานะ</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
         <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
