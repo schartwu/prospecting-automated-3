@@ -575,11 +575,12 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const row = r => { const left = daysTo(r.bid_date);
       return `<a class="lead" href="${href({ lead: r.lead_key, from: "tracking" })}">
       <div style="display:grid;gap:5px;min-width:0">
-        <div class="badges">${statusPill(r.status)}${resultPill(r.result)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
+        <div class="badges">${r.auto_result ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(r.status)}${resultPill(r.result)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
         <div class="title">${esc(r.title || r.lead_key)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>
           ${r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : " · ปิดแล้ว"}</span>` : ""}</div>
-        <div class="meta"><span>อัปเดตโดย <b class="who-by">${esc(r.status_by || "–")}</b> · ${esc(thTime(r.status_at))}${r.n_events > 1 ? ` · ${r.n_events} ครั้ง` : ""}</span>
+        <div class="meta">${r.auto_result ? `<span>ระบบพบผลจากประกาศผู้ชนะ · ${esc(thTime(r.status_at))} · ยื่นไปก่อนมีระบบ หรือไม่มีใครกดสถานะ</span>`
+          : `<span>อัปเดตโดย <b class="who-by">${esc(r.status_by || "–")}</b> · ${esc(thTime(r.status_at))}${r.n_events > 1 ? ` · ${r.n_events} ครั้ง` : ""}</span>`}
           ${r.reasons && r.reasons.length ? `<span>เหตุผล: ${esc(r.reasons.join(", "))}</span>` : ""}${r.note ? `<span>“${esc(r.note)}”</span>` : ""}</div>
       </div>
       <div class="money"><span class="label">งบประมาณ</span>
@@ -692,7 +693,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     main.innerHTML = `<div class="grid2">
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
         <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
-        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
+        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
         <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>
         <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
