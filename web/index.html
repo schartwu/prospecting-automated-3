@@ -363,14 +363,15 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
   const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
-  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["30", "30 วัน"], ["month", "เดือนนี้"], ["90", "3 เดือน"], ["all", "ทั้งหมด"], ["custom", "กำหนดเอง"]];
+  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["30", "30 วัน"], ["month", "เดือนนี้"], ["90", "3 เดือน"], ["all", "12 เดือน"], ["custom", "กำหนดเอง"]];
 
   function applyPreset(p, target = per()) {
     target.preset = p;
     const end = todayISO(), last = state.days[state.days.length - 1] || end;
     if (p === "last") { target.from = target.to = last; }
     else if (p === "month") { target.from = end.slice(0, 8) + "01"; target.to = end; }
-    else if (p === "all") { target.from = FIRST_DAY; target.to = end; }
+    // "12 เดือน": the longest preset. Each extra month adds about 2 MB to every load (results + leads).
+    else if (p === "all") { target.to = end; const y = addDays(end, -364); target.from = y > FIRST_DAY ? y : FIRST_DAY; }
     else if (p !== "custom") { target.to = end; target.from = addDays(end, -(Number(p) - 1)); }
   }
 
@@ -504,7 +505,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
       ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
       ["ยื่นราคาแล้ว", bid.length],
-      ["ชนะ", announced.filter(r => r.result === "win").length]];
+      ["ชนะ (จาก Lead)", announced.filter(r => r.result === "win").length]];
     const max = Math.max(1, funnel[0][1]);
     const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
       <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (${dueText(r.bid_date)})</span>` : ""}</span>
@@ -517,7 +518,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
-        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
+        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (ทุกงาน)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))} · รวมเฉพาะเจาะจง</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
@@ -692,7 +693,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const top = Object.entries(rivals).sort((a, b) => b[1].n - a[1].n || b[1].v - a[1].v).slice(0, 10);
     const q = R.q.trim().toLowerCase();
     const all = res.filter(o => !q || `${o.title} ${o.dept_name} ${o.winners} ${o.province || ""}`.toLowerCase().includes(q)).sort(byPrice);
-    const proj = o => `<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.title)}</a> ${methodPill(o.method)}${o.kind === "result" ? changePill(o) : ""}`;
+    const proj = o => `${o.project_no ? `<a href="${href({ lead: o.project_no, from: "results" })}">${esc(o.title)}</a>` : esc(o.title)}
+      <a class="small" href="${esc(o.link)}" target="_blank" rel="noopener noreferrer" title="เปิดเอกสารประกาศใน e-GP">เอกสาร e-GP ↗</a>
+      ${methodPill(o.method)}${o.kind === "result" ? changePill(o) : ""}`;
     const where = o => `${esc(o.dept_name || "")}<div class="small muted">${esc(o.province || "ไม่ระบุจังหวัด")}</div>`;
     const winner = o => isOurs(o.winners) ? '<span class="pill win">🏆 OfficeMate</span>' : esc(o.winners || "–");
     const table = (head, rows) => rows.length ? `<div class="tbl"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`
@@ -772,19 +775,34 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
         <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
         <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
-        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>
+        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
         <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
         <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
         <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd>
+        <dt>12 เดือน</dt><dd>ช่วงยาวสุดที่เลือกได้ในปุ่ม ถ้าต้องการช่วงอื่นใช้ “กำหนดเอง”</dd>
         <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd></dl></div>
       <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
         <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
         <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
         <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
         <dt>${scoreBadge(50)} 59–50</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
-        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div></div>`;
+        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div>
+      <div class="card legend"><h2>วิธีจัดหา</h2><dl>
+        <dt>e-bidding</dt><dd>ประกวดราคาอิเล็กทรอนิกส์ ยื่นเอกสารและราคาในระบบ e-GP ภายในวันยื่นซอง (วงเงินเกิน 5 แสนบาท)</dd>
+        <dt>e-market</dt><dd>สินค้าทั่วไปที่มีสเปกในแคตตาล็อก e-GP ยื่นราคาในระบบ e-GP</dd>
+        <dt>เฉพาะเจาะจง</dt><dd>หน่วยงานเชิญผู้ขายเอง ส่วนใหญ่ไม่เกิน 5 แสนบาท ไม่มีประกาศเชิญชวน จึงแทบไม่เป็น Lead แต่ขึ้นในผลลัพธ์เมื่อประกาศผู้ชนะ</dd>
+        <dt>อื่น ๆ</dt><dd>คัดเลือก สอบราคา และแผนจัดซื้อ (e-GP ไม่บอกวิธีจัดหาของแผน)</dd></dl></div>
+      <div class="card legend"><h2>ผลและป้าย</h2><dl>
+        <dt>${resultPill("win")}</dt><dd>ประกาศผู้ชนะเป็น บริษัท ออฟฟิศเมท (ไทย) จำกัด</dd>
+        <dt>${resultPill("lost")}</dt><dd>มีคนกด “ยื่นราคาแล้ว” แต่บริษัทอื่นชนะ</dd>
+        <dt>${resultPill("other_won")}</dt><dd>บริษัทอื่นชนะ และเราไม่ได้กดยื่น</dd>
+        <dt><span class="pill warn">🔄 เปลี่ยนผู้ชนะ</span></dt><dd>หน่วยงานเปลี่ยนผู้ชนะ (W2) ระบบใช้ผู้ชนะใหม่ ผลชนะ/แพ้เปลี่ยนตามเอง</dd>
+        <dt><span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ</span></dt><dd>หน่วยงานยกเลิกผู้ชนะ (W1) โครงการกลับไปรอผล กดอัปเดตสถานะได้อีกครั้ง</dd>
+        <dt>โครงการหายจากหน้า Lead</dt><dd>เมื่อมีประกาศผู้ชนะแล้ว โครงการไม่ใช่ Lead อีก ดูต่อได้ในผลลัพธ์และติดตามสถานะ (บรรทัดใต้ตัวกรองบอกจำนวนที่ซ่อน)</dd>
+        <dt>ปุ่มอัปเดตสถานะถูกปิด</dt><dd>โครงการที่ประกาศผู้ชนะแล้วหรือถูกยกเลิก เพราะสถานะทั้งหมดเป็นขั้นก่อนรู้ผล</dd>
+        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd></dl></div></div>`;
   }
 
   // ---------------- one lead ----------------
