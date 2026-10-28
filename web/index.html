@@ -710,10 +710,11 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       lost: ["Lead ที่บริษัทอื่นชนะ", "ใครชนะ ด้วยราคาเท่าไร เทียบกับงบ", () => table(["โครงการ", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
         lost.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td><td>${winner(o)}</td>
           <td class="num money">${baht(o.winner_price)}</td><td class="num">${baht(o.budget_thb)}</td></tr>`))],
-      changed: ["ผลที่เปลี่ยนแปลง", "หน่วยงานเปลี่ยนผู้ชนะ (W2) หรือยกเลิกผู้ชนะ (W1) · ระบบดึงประกาศเหล่านี้ทุกวันศุกร์", () => table(["โครงการ", "ประกาศ", "เดิม", "ตอนนี้"],
+      changed: ["ผลที่เปลี่ยนแปลง", "หน่วยงานเปลี่ยนผู้ชนะ (W2) หรือยกเลิกผู้ชนะ (W1) · ดึงทุกวันศุกร์ · “ตอนนี้” = ประกาศผู้ชนะฉบับล่าสุด อัปเดตเองเมื่อมีประกาศใหม่", () => table(["โครงการ", "ประกาศ", "เดิม", "ตอนนี้"],
         changed.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ประกาศ ${esc(thDate(o.pub_date))}</div></td>
-          <td>${o.withdrawn ? '<span class="pill warn">ยกเลิกผู้ชนะ</span>' : '<span class="pill warn">เปลี่ยนผู้ชนะ</span>'}</td>
-          <td>${esc(o.prev_winners || "–")}</td><td>${o.withdrawn ? "รอประกาศใหม่" : `${winner(o)} · ${baht(o.winner_price)}`}</td></tr>`))],
+          <td>${o.change_type === "W1" ? '<span class="pill warn">ยกเลิกผู้ชนะ</span>' : '<span class="pill warn">เปลี่ยนผู้ชนะ</span>'}</td>
+          <td>${esc(o.prev_winners || "–")}</td>
+          <td>${o.withdrawn ? "รอประกาศใหม่" : o.winners ? `${winner(o)} · ${baht(o.winner_price)}` : "ประกาศผู้ชนะแล้ว (ยังอ่านชื่อไม่ได้)"}</td></tr>`))],
       cancelled: ["Lead ถูกยกเลิก", "มีประกาศยกเลิก (D1) ของโครงการที่เคยส่งเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "งบ"],
         cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))],
     };
@@ -730,7 +731,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
         ${tile("lost", "alert", "Lead ที่บริษัทอื่นชนะ", lost.length, `มูลค่า ${short(sum(lost, "winner_price"))}`)}
         ${tile("cancelled", "", "Lead ถูกยกเลิก", cancelled.length, "ประกาศยกเลิก (D1)")}
-        ${tile("changed", "", "ผลที่เปลี่ยนแปลง", changed.length, `เปลี่ยนผู้ชนะ ${changed.filter(o => !o.withdrawn).length} · ยกเลิก ${changed.filter(o => o.withdrawn).length}`)}
+        ${tile("changed", "", "ผลที่เปลี่ยนแปลง", changed.length, `เปลี่ยนผู้ชนะ ${changed.filter(o => o.change_type !== "W1").length} · ยกเลิก ${changed.filter(o => o.change_type === "W1").length}`)}
       </div>
       ${open ? `<div class="card detail" id="detail"><div class="section-head"><h2>${open[0]}</h2><span class="small muted">${open[1]}</span></div>${open[2]()}</div>` : ""}
       <div class="grid2">
