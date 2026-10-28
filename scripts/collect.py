@@ -29,8 +29,12 @@ from egp.feed import fetch  # noqa: E402
 BKK = ZoneInfo("Asia/Bangkok")
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
-# The types the digest uses. W1/W2 (cancelled/changed winners) are never shown.
+# The types the digest and the web app use.
 DAILY_TYPES = ["P0", "15", "B0", "D0", "W0", "D1", "D2"]
+# Winners withdrawn (W1) or changed (W2) are rare, so they are fetched once a week, on Friday evening
+# (the RSS keeps about a week), and the web app shows the new result on Monday.
+WEEKLY_TYPES = ["W1", "W2"]
+WEEKLY_DAY = 4  # Friday
 NATIONWIDE = "(ไม่ระบุหน่วยงาน)"
 
 
@@ -40,9 +44,10 @@ def build_requests(db: DB, args) -> list[tuple[dict, dict]]:
         depts = db.select("departments", param="eq.deptId", active="is.true", select="code,name",
                           order="code")
         mine = [d for i, d in enumerate(depts) if i % args.shards == args.shard]
-        reqs = [({"anounceType": t}, {"dept_name": NATIONWIDE}) for t in DAILY_TYPES] if args.shard == 0 else []
+        types = DAILY_TYPES + (WEEKLY_TYPES if datetime.now(BKK).weekday() == WEEKLY_DAY else [])
+        reqs = [({"anounceType": t}, {"dept_name": NATIONWIDE}) for t in types] if args.shard == 0 else []
         reqs += [({"deptId": d["code"], "anounceType": t}, {"dept_name": d["name"]})
-                 for d in mine for t in DAILY_TYPES]
+                 for d in mine for t in types]
         return reqs
     if args.mode == "capped":
         feeds = db.rpc("recent_capped_feeds", {"p_days": 7})

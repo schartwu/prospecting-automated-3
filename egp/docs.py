@@ -133,6 +133,26 @@ def parse_winners(text: str) -> tuple[list[str], float | None]:
         price = re.search(MONEY, text[m.end():m.end() + 200])
         if price:
             total += float(price.group(1).replace(",", ""))
+    if not winners:
+        return parse_winner_table(text)
+    return winners, (total or None)
+
+
+def parse_winner_table(text: str) -> tuple[list[str], float | None]:
+    """W2 (winners changed) lists the result as a table: 'รายการที่พิจารณา | ผู้เสนอราคาดีที่สุด | ราคาที่เสนอ |'
+    then 'item | winner | 1,998,300.11 |' per lot."""
+    head = re.search(r"ผู้เสนอราคาดีที่สุด\s*\|\s*ราคาที่เสนอ\s*\|", text)
+    if not head:
+        return [], None
+    cells = [c.strip() for c in text[head.end():].split("|")]
+    cells = [c for c in cells if c]
+    winners, total, i = [], 0.0, 0
+    while i + 2 < len(cells) and re.fullmatch(r"[\d,]+(?:\.\d+)?", cells[i + 2]):
+        name = cells[i + 1]
+        if name not in winners:
+            winners.append(name)
+        total += float(cells[i + 2].replace(",", ""))
+        i += 3
     return winners, (total or None)
 
 

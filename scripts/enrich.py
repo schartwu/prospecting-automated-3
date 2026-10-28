@@ -26,7 +26,7 @@ from egp import docs, provinces  # noqa: E402
 from egp.db import DB  # noqa: E402
 from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
 
-TYPES = ["D0", "B0", "15", "P0", "W0"]
+TYPES = ["D0", "B0", "15", "P0", "W0", "W2"]  # W2: winners changed, read like a W0
 SCAN_MODELS = [m for m in FLASH_FIRST if "lite" not in m]
 def transient(e: Exception) -> bool:
     """Server-side hiccups (HTTP 5xx such as 511, timeouts): leave the row unsaved so the next run retries."""
@@ -81,7 +81,7 @@ class Enricher:
         try:
             raw, info, pdfs = docs.fetch_text(r["link"])
             text = docs.normalize(raw)
-            if r["announce_type"] == "W0":
+            if r["announce_type"] in ("W0", "W2"):
                 return self.winner(r, text, info, detail)
             budget = docs.parse_budget(text)
             bid, bid_time = docs.parse_bid_date(text)
@@ -129,7 +129,7 @@ class Enricher:
         self.save(detail)
 
     def winner(self, r, text, info, detail):
-        """W0: who won and at what price."""
+        """W0 / W2: who won and at what price."""
         winners, price = docs.parse_winners(text)
         source = "regex"
         if not winners and len(text) > 200 and self.ai_ok:

@@ -1,7 +1,7 @@
 """Build the morning digest email from Supabase and send it (or just write a preview).
 
-Daily: new D0 (bid now), B0 (prepare stock), 15 (new reference prices). Mondays also add the week's
-new P0 plans and W0 results. Only items first seen since the previous digest are included.
+Every weekday the same four lists: new D0 (bid now), B0 (prepare stock), 15 (reference prices) and P0 plans
+scoring 75+. Only items first seen since the previous digest are included; results are on the web app.
 
 Only Sales' provinces go in the email (TARGET_PROVINCES, a repository variable, else DEFAULT_PROVINCES).
 Announcements whose province could not be read (mostly central offices in Bangkok/Nonthaburi) stay in;
@@ -10,7 +10,6 @@ those clearly in another province go to a separate Excel tab instead of being dr
 import argparse
 import html
 import os
-import re
 import smtplib
 import sys
 from urllib.parse import quote
@@ -34,18 +33,12 @@ DEFAULT_PROVINCES = ("กรุงเทพมหานคร, นนทบุ�
                      "พระนครศรีอยุธยา, สระบุรี, นครนายก, ปราจีนบุรี, ฉะเชิงเทรา, ชลบุรี, ระยอง, จันทบุรี")
 
 SECTIONS = [
-    # (types, heading, what Sales/Merchandise should do, when, min score or None for the default)
-    # when: "daily" = every digest, "weekly" = Mondays only (last 7 days), "not_weekly" = Tue-Fri only.
-    (["D0"], "🔥 ประกาศเชิญชวน — ยื่นราคาได้แล้ว", "เปิดเอกสาร ตรวจคุณสมบัติ และเตรียมยื่นราคา", "daily", None),
-    (["B0"], "🛠 ร่าง TOR — เตรียมหาสินค้า (ประกาศจริงตามมาใน ~5 วัน)", "ให้ Merchandise ดู spec และเช็คสต็อก/ราคาทุน",
-     "daily", None),
-    (["15"], "💰 ประกาศราคากลาง", "รู้งบประมาณของโครงการ", "daily", None),
-    # Plans are the earliest signal for Merchandise, so the strongest ones go out daily; Monday has them all.
-    (["P0"], "📅 แผนจัดซื้อใหม่ (คะแนน 75 ขึ้นไป)", "รู้ล่วงหน้าหลายเดือน วางแผนสินค้าและเข้าพบหน่วยงาน",
-     "not_weekly", 75),
-    (["P0"], "📅 แผนจัดซื้อใหม่ (สรุปรายสัปดาห์)", "โอกาสล่วงหน้า วางแผนเข้าพบหน่วยงาน", "weekly", None),
-    (["W0"], "📊 ผลผู้ชนะในหมวดของเรา (สรุปรายสัปดาห์)", "ดูว่าใครชนะ และหน่วยงานไหนซื้อของสำนักงานบ่อย",
-     "weekly", None),
+    # (types, heading, what Sales/Merchandise should do, min score or None for the default)
+    # The same four every weekday; results, cancellations and summaries are on the web app.
+    (["D0"], "🔥 ประกาศเชิญชวน — ยื่นราคาได้แล้ว", "เปิดเอกสาร ตรวจคุณสมบัติ และเตรียมยื่นราคา", None),
+    (["B0"], "🛠 ร่าง TOR — เตรียมหาสินค้า (ประกาศจริงตามมาใน ~5 วัน)", "ให้ Merchandise ดู spec และเช็คสต็อก/ราคาทุน", None),
+    (["15"], "💰 ประกาศราคากลาง", "รู้งบประมาณของโครงการ", None),
+    (["P0"], "📅 แผนจัดซื้อใหม่ (คะแนน 75 ขึ้นไป)", "รู้ล่วงหน้าหลายเดือน วางแผนสินค้าและเข้าพบหน่วยงาน", 75),
 ]
 TYPE_LABEL = {
     "P0": "แผนจัดซื้อ",
@@ -128,30 +121,28 @@ def update_button(url, label=UPDATE):
             f'border-radius:5px">{label}</a></div>')
 
 
-def section_html(heading, hint, rows, today, results=False, app_link=None, label=UPDATE, excel=True):
-    """results=True (W0): the money and date columns show the winning price and the winner instead.
-    app_link(key) -> the reader's link to that lead in the web app, or None (then the Excel file is attached)."""
+def section_html(heading, hint, rows, today, app_link=None, label=UPDATE, excel=True):
+    """app_link(key) -> the reader's link to that lead in the web app, or None (then the Excel file is attached)."""
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
     shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
     if not rows:
         out.append('<div style="color:#999;font-size:13px">ไม่มีรายการใหม่</div>')
         return "\n".join(out)
-    money_head, last_head = ("ราคาที่ชนะ (บาท)", "ผู้ชนะ") if results else ("งบ (บาท)", "วันยื่นซอง")
     out.append('<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
                '<tr style="background:#f2f2f2;text-align:left"><th>คะแนน</th><th>โครงการ</th><th>หน่วยงาน</th>'
-               f'<th style="white-space:nowrap">{money_head}</th><th style="white-space:nowrap">{last_head}</th>'
+               '<th style="white-space:nowrap">งบ (บาท)</th><th style="white-space:nowrap">วันยื่นซอง</th>'
                '<th style="white-space:nowrap">วันที่ประกาศ</th></tr>')
     for r in rows:
         flags = ", ".join(TYPE_LABEL.get(s, s) for s in (r.get("stages") or []) if s != r["announce_type"])
-        badges = ' <b style="color:#1f7a3a">[OfficeMate ชนะ]</b>' if results and is_ours(r.get("winners")) else ""
+        badges = ""
         if r.get("cancelled"):
             badges += ' <b style="color:#c00">[ยกเลิกแล้ว]</b>'
         if r.get("amended"):
             badges += ' <b style="color:#d97706">[มีการแก้ไขประกาศ]</b>'
         sub = " · ".join(filter(None, [r.get("category"), r.get("reason"),
                                        f"มีประกาศ: {flags}" if flags else None]))
-        if app_link and not results and lead_key(r):
+        if app_link and lead_key(r):
             badges += update_button(app_link(lead_key(r)), label)
         out.append(
             "<tr style='border-top:1px solid #eee;vertical-align:top'>"
@@ -160,10 +151,9 @@ def section_html(heading, hint, rows, today, results=False, app_link=None, label
             f"<div style='color:#888;font-size:12px'>{html.escape(sub)}</div></td>"
             f"<td>{html.escape(r.get('dept_name') or '')}"
             f"<div style='color:#888;font-size:12px'>{html.escape(r.get('province') or 'ไม่ระบุจังหวัด')}</div></td>"
-            f"<td style='text-align:right;white-space:nowrap'>{fmt_money(r.get('winner_price') if results else r.get('budget_thb'))}</td>"
-            + (f"<td>{html.escape(r.get('winners') or '-')}</td>" if results
-               else f"<td style='white-space:nowrap'>{bid_cell(r, today)}</td>")
-            + f"<td style='white-space:nowrap'>{r.get('pub_date') or ''}</td></tr>")
+            f"<td style='text-align:right;white-space:nowrap'>{fmt_money(r.get('budget_thb'))}</td>"
+            f"<td style='white-space:nowrap'>{bid_cell(r, today)}</td>"
+            f"<td style='white-space:nowrap'>{r.get('pub_date') or ''}</td></tr>")
     out.append("</table>")
     if len(shown) > len(rows):
         out.append(f'<div style="color:#666;font-size:12px">แสดง {len(rows)} อันดับแรก '
@@ -171,120 +161,15 @@ def section_html(heading, hint, rows, today, results=False, app_link=None, label
     return "\n".join(out)
 
 
-def is_ours(winners) -> bool:
-    """OfficeMate bids as "บริษัท ออฟฟิศเมท (ไทย) จำกัด"; some documents spell ำ as ํ + า."""
-    return bool(winners) and re.search(r"ออฟฟิศ\s*เมท", winners.replace("ํา", "ำ")) is not None
-
-
-def small_table(headers, rows, numeric=(), more='ดูทั้งหมดในแท็บ "ผลลัพธ์" ของไฟล์ Excel'):
-    """rows: lists of cell values; columns named in `numeric` are money, right-aligned."""
-    out = ['<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%;margin-bottom:8px">'
-           '<tr style="background:#f2f2f2;text-align:left">' + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"]
-    for cells in rows[:EMAIL_ROW_LIMIT]:
-        tds = []
-        for h, v in zip(headers, cells):
-            if h in numeric:
-                tds.append(f"<td style='text-align:right;white-space:nowrap'>{fmt_money(v)}</td>")
-            else:
-                tds.append(f"<td>{v}</td>")  # callers pass escaped HTML
-        out.append("<tr style='border-top:1px solid #eee;vertical-align:top'>" + "".join(tds) + "</tr>")
-    out.append("</table>")
-    if len(rows) > EMAIL_ROW_LIMIT:
-        out.append(f'<div style="color:#666;font-size:12px">แสดง {EMAIL_ROW_LIMIT} จาก {len(rows)} รายการ '
-                   f'· {more}</div>')
-    return "\n".join(out)
-
-
-def outcomes_html(rows, targets, excel=True):
-    """Monday: what happened to the leads, read from e-GP itself (W0 winners, D1 cancellations).
-    Returns (html, rows for the Excel tab)."""
-    more = 'ดูทั้งหมดในแท็บ "ผลลัพธ์" ของไฟล์ Excel' if excel else WEB_MORE + " หน้า ผลลัพธ์"
-    def link(r):
-        return f"<a href=\"{html.escape(r['link'])}\">{html.escape(r['title'][:160])}</a>"
-
-    def where(r):
-        return (f"{html.escape(r.get('dept_name') or '')}"
-                f"<div style='color:#888;font-size:12px'>{html.escape(r.get('province') or 'ไม่ระบุจังหวัด')}</div>")
-
-    def ours_area(r):  # same rule as the rest of the email: Sales' provinces plus unplaced ones
-        return not r.get("province") or r["province"] in targets
-
-    results = [r for r in rows if r["kind"] == "result"]
-    wins = sorted([r for r in results if r["ours"]], key=lambda r: -(r.get("winner_price") or 0))
-    lead_results = [r for r in results if r.get("lead_types")]
-    lost = sorted([r for r in lead_results if not r["ours"] and ours_area(r)],
-                  key=lambda r: -(r.get("winner_price") or 0))
-    cancelled = [r for r in rows if r["kind"] == "cancelled" and ours_area(r)]
-    rivals = {}
-    for r in results:
-        if not r["ours"] and ours_area(r) and r.get("winners"):
-            n, total = rivals.get(r["winners"], (0, 0.0))
-            rivals[r["winners"]] = (n + 1, total + float(r.get("winner_price") or 0))
-    top = sorted(rivals.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))[:10]
-
-    win_value = sum(float(r.get("winner_price") or 0) for r in wins)
-    out = ['<h3 style="margin:24px 0 4px">🏆 ผลลัพธ์ประจำสัปดาห์</h3>',
-           '<div style="color:#666;font-size:13px;margin-bottom:8px">ระบบตรวจเองจากประกาศผู้ชนะ (W0) และประกาศยกเลิก (D1) '
-           'ของ 7 วันที่ผ่านมา นับเฉพาะประกาศผู้ชนะในหมวดสินค้าของเรา (คะแนน ≥ 50) ที่ระบบอ่านแล้ว</div>',
-           '<div style="background:#f6f8f9;border:1px solid #e3e8eb;border-radius:6px;padding:10px 12px;font-size:14px;'
-           'margin-bottom:10px">'
-           f'<b>OfficeMate ชนะ {len(wins)} รายการ มูลค่า {fmt_money(win_value)} บาท</b> (ทุกจังหวัด) · '
-           f'Lead ที่ประกาศผลแล้ว {len(lead_results)} รายการ: เราชนะ {sum(r["ours"] for r in lead_results)} · '
-           f'บริษัทอื่นชนะ {len(lost)} · Lead ถูกยกเลิก {len(cancelled)}</div>']
-    if wins:
-        out.append("<b>OfficeMate ชนะ</b>")
-        out.append(small_table(
-            ["โครงการ", "หน่วยงาน", "ราคาที่ชนะ (บาท)", "มาจาก Lead"],
-            [[link(r), where(r), r.get("winner_price"),
-              ", ".join(TYPE_LABEL.get(t, t) for t in r["lead_types"]) if r.get("lead_types")
-              else "<span style='color:#888'>ไม่มี (เช่น เฉพาะเจาะจง)</span>"] for r in wins],
-            numeric={"ราคาที่ชนะ (บาท)"}, more=more))
-    if lost:
-        out.append("<b>Lead ที่บริษัทอื่นชนะ</b> <span style='color:#888;font-size:12px'>"
-                   "(เคยส่งเป็นประกาศเชิญชวน/ร่าง TOR/ราคากลาง)</span>")
-        out.append(small_table(
-            ["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ (บาท)", "งบ (บาท)"],
-            [[link(r), where(r), html.escape(r["winners"]), r.get("winner_price"), r.get("budget_thb")] for r in lost],
-            numeric={"ราคาที่ชนะ (บาท)", "งบ (บาท)"}, more=more))
-    if cancelled:
-        out.append("<b>Lead ที่ถูกยกเลิก</b>")
-        out.append(small_table(["โครงการ", "หน่วยงาน", "งบ (บาท)"],
-                               [[link(r), where(r), r.get("budget_thb")] for r in cancelled], numeric={"งบ (บาท)"}, more=more))
-    if top:
-        out.append("<b>คู่แข่งที่ชนะบ่อย</b> <span style='color:#888;font-size:12px'>(จังหวัดเป้าหมายและไม่ระบุจังหวัด)</span>")
-        out.append(small_table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม (บาท)"],
-                               [[html.escape(name), n, total] for name, (n, total) in top],
-                               numeric={"มูลค่ารวม (บาท)"}, more=more))
-
-    def label(r):
-        if r["kind"] == "cancelled":
-            return "Lead ถูกยกเลิก"
-        if r["ours"]:
-            return "OfficeMate ชนะ"
-        return "บริษัทอื่นชนะ (เคยเป็น Lead)" if r.get("lead_types") else "บริษัทอื่นชนะ"
-    order = ["OfficeMate ชนะ", "บริษัทอื่นชนะ (เคยเป็น Lead)", "Lead ถูกยกเลิก", "บริษัทอื่นชนะ"]
-    sheet = sorted(({**r, "outcome": label(r), "lead_from": ", ".join(r.get("lead_types") or [])} for r in rows),
-                   key=lambda r: (order.index(r["outcome"]), -(r.get("winner_price") or 0)))
-    return "\n".join(out), sheet
-
-
-def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str],
-          with_outcomes: bool = True, app_link=None, board_link=None, label=UPDATE):
-    """With app_link/board_link the lists live on the web app and no Excel is attached."""
+def build(db: DB, since: datetime, now: datetime, min_score: int, targets: set[str],
+          app_link=None, board_link=None, label=UPDATE):
+    """Returns (email html, rows in the email, rows clearly in other provinces).
+    With app_link/board_link the lists live on the web app and no Excel is attached."""
     excel = board_link is None
-    """Returns (email html, rows in the email, rows clearly in other provinces, Monday outcome rows)."""
     today = now.date()
-    parts, all_rows, elsewhere, outcome_rows = [], [], [], []
-    if weekly and with_outcomes:
-        rows = db.rpc("outcome_items", {"p_since": (now - timedelta(days=7)).isoformat()})
-        section, outcome_rows = outcomes_html(rows, targets, excel)
-        parts.append(section)
-    for types, heading, hint, when, sec_min in SECTIONS:
-        if (when == "weekly" and not weekly) or (when == "not_weekly" and weekly):
-            continue
-        # Weekly sections look back 7 days regardless of when the last daily digest went out.
-        sec_since = min(since, now - timedelta(days=7)) if when == "weekly" else since
-        rows = db.rpc("digest_items", {"p_since": sec_since.isoformat(), "p_types": types,
+    parts, all_rows, elsewhere = [], [], []
+    for types, heading, hint, sec_min in SECTIONS:
+        rows = db.rpc("digest_items", {"p_since": since.isoformat(), "p_types": types,
                                        "p_min_score": max(min_score, sec_min or 0)})
         # Keep Sales' provinces and the ones nobody could place; set the rest aside for the Excel tab.
         elsewhere += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows
@@ -299,8 +184,7 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
                 left = days_left(r, today)
                 return (left is None or left < 0, left if left is not None else 999, -r["score"])
             rows.sort(key=urgency)
-        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"], app_link=app_link,
-                                  label=label, excel=excel))
+        parts.append(section_html(heading, hint, rows, today, app_link=app_link, label=label, excel=excel))
         all_rows += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows]
 
     total = len(all_rows)
@@ -318,16 +202,10 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
     bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
     foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
             f'{html.escape(bands)}</p></div>')
-    return head + "\n".join(parts) + foot, all_rows, elsewhere, outcome_rows
+    return head + "\n".join(parts) + foot, all_rows, elsewhere
 
 
-OUTCOME_COLS = {"outcome": "ผลลัพธ์", "title": "ชื่อโครงการ", "dept_name": "หน่วยงาน", "province": "จังหวัด",
-                "winners": "ผู้ชนะ", "winner_price": "ราคาที่ชนะ (บาท)", "budget_thb": "งบประมาณ (บาท)",
-                "lead_from": "เคยส่งเป็น Lead (ประเภท)", "pub_date": "วันที่ประกาศ", "project_no": "เลขโครงการ",
-                "link": "ลิงก์"}
-
-
-def write_xlsx(rows, path, elsewhere=(), outcomes=()):
+def write_xlsx(rows, path, elsewhere=()):
     cols = {"section": "หมวดอีเมล", "score": "คะแนน", "type_label": "ประเภทประกาศ", "title": "ชื่อโครงการ",
             "dept_name": "หน่วยงาน", "province": "จังหวัด", "category": "หมวดสินค้า", "reason": "เหตุผล",
             "budget_thb": "งบประมาณ (บาท)", "winners": "ผู้ชนะ", "winner_price": "ราคาที่ชนะ (บาท)",
@@ -351,9 +229,6 @@ def write_xlsx(rows, path, elsewhere=(), outcomes=()):
         ("ยกเลิกแล้ว", "โครงการเดียวกันมีประกาศยกเลิกประกาศเชิญชวน (D1) ตามมา — ไม่ต้องตามต่อ"),
         ("มีการแก้ไขประกาศ", "โครงการเดียวกันมีประกาศแก้ไขประกาศเชิญชวน (D2) — เปิดดูรายละเอียดใหม่"),
         ("เลขโครงการ", "เลข 11 หลักของ e-GP ใช้ค้นหาโครงการในเว็บ e-GP"),
-        ("แท็บ ผลลัพธ์ (วันจันทร์)", "ผลของ 7 วันที่ผ่านมาที่ระบบตรวจเองจากประกาศผู้ชนะ (W0) และประกาศยกเลิก (D1): "
-                                    "OfficeMate ชนะ / บริษัทอื่นชนะ (เคยเป็น Lead) / บริษัทอื่นชนะ / Lead ถูกยกเลิก "
-                                    "\"เคยส่งเป็น Lead\" = โครงการเดียวกันเคยอยู่ในอีเมลเป็นประกาศเชิญชวน ร่าง TOR หรือราคากลาง"),
     ]
     legend = ([{"หัวข้อ": "ประเภทประกาศ", "ค่า": f"{TYPE_LABEL[k]} ({k})", "ความหมาย": v}
                for k, v in TYPE_MEANING.items()]
@@ -361,11 +236,6 @@ def write_xlsx(rows, path, elsewhere=(), outcomes=()):
               + [{"หัวข้อ": "คอลัมน์", "ค่า": k, "ความหมาย": v} for k, v in columns_help])
     sheets = [("รายการ (กทม. และปริมณฑล)", rows)] + ([("รายการ (จังหวัดอื่น)", elsewhere)] if elsewhere else [])
     with pd.ExcelWriter(path) as xw:
-        if outcomes:  # Mondays: results first, it is the headline of the week
-            pd.DataFrame(list(outcomes), columns=list(OUTCOME_COLS)).rename(columns=OUTCOME_COLS).to_excel(
-                xw, sheet_name="ผลลัพธ์", index=False)
-            style_sheet(xw.sheets["ผลลัพธ์"], number_cols={"งบประมาณ (บาท)", "ราคาที่ชนะ (บาท)"},
-                        wrap_cols={"ชื่อโครงการ": 60, "หน่วยงาน": 28, "ผู้ชนะ": 30})
         for name, rs in sheets:
             frame(rs).to_excel(xw, sheet_name=name, index=False)
         pd.DataFrame(legend).to_excel(xw, sheet_name="คำอธิบาย", index=False)
@@ -439,7 +309,6 @@ def main():
     ap.add_argument("--to", default="", help="override recipients (comma separated) for tests")
     ap.add_argument("--monitor", action="store_true", help="with --to: send the Monitors' version instead")
     ap.add_argument("--since-days", type=float, default=0, help="ignore the last digest; look back N days")
-    ap.add_argument("--weekly", choices=["auto", "yes", "no"], default="auto")
     ap.add_argument("--min-score", type=int, default=50)
     args = ap.parse_args()
 
@@ -452,44 +321,32 @@ def main():
         since = datetime.fromisoformat(last[0]["sent_at"])
     else:
         since = now - timedelta(days=1)
-    weekly = now.weekday() == 0 if args.weekly == "auto" else args.weekly == "yes"
 
     targets = provinces.parse_targets(os.environ.get("TARGET_PROVINCES") or DEFAULT_PROVINCES)
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
 
-    def make(loop: bool, suffix: str = "", token: str | None = None, label: str = UPDATE):
-        """loop=True adds the KG Lead Loop parts (Monday outcomes; with the reader's token, an "อัปเดตสถานะ"
-        button on every lead and a link to the lead board). While those are on trial they go only to
-        LOOP_RECIPIENTS; the team's digest stays as it was."""
+    def make(suffix: str = "", token: str | None = None, label: str = UPDATE):
+        """With the reader's token: a button on every lead (label) and a link to the web app, no Excel."""
         app_link = (lambda key: f"{LEAD_APP_URL}#t={token}&lead={quote(key)}") if token else None
-        body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets, with_outcomes=loop,
-                                                app_link=app_link, label=label,
-                                                board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
+        body, rows, elsewhere = build(db, since, now, args.min_score, targets, app_link=app_link, label=label,
+                                      board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
         xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}{suffix}.xlsx")
-        write_xlsx(rows, xlsx, elsewhere, outcomes)
+        write_xlsx(rows, xlsx, elsewhere)
         if not token:  # out/ is uploaded as a run artifact of this public repository; personal links stay out
             with open(os.path.join(out, f"digest_preview{suffix}.html"), "w", encoding="utf-8") as f:
                 f.write(body)
-        print(f"digest{suffix} since {since:%Y-%m-%d %H:%M} weekly={weekly}: {len(rows)} items "
-              f"(+{len(elsewhere)} in other provinces, {len(outcomes)} outcomes) -> {out}")
-        return body, rows, outcomes, xlsx
+        print(f"digest{suffix} since {since:%Y-%m-%d %H:%M}: {len(rows)} items "
+              f"(+{len(elsewhere)} in other provinces) -> {out}")
+        return body, rows, xlsx
 
-    def subject(rows, outcomes, prefix=""):
-        n_new = len(rows)
-        weekly_headings = {h for _, h, _, when, _ in SECTIONS if when == "weekly"}
-        n_daily = sum(r["section"] not in weekly_headings for r in rows)
+    def subject(rows, prefix=""):
         n_bid = sum(r["announce_type"] == "D0" for r in rows)
         n_prep = sum(r["announce_type"] == "B0" for r in rows)
-        n_plan = sum(r["announce_type"] == "P0" and r["section"] not in weekly_headings for r in rows)
-        weekly_note = f" + สรุปรายสัปดาห์ {n_new - n_daily} รายการ" if n_new > n_daily else ""
-        n_wins = sum(r["outcome"] == "OfficeMate ชนะ" for r in outcomes)
-        if n_wins:
-            weekly_note += f" · 🏆 OfficeMate ชนะ {n_wins}"
+        n_plan = sum(r["announce_type"] == "P0" for r in rows)
         return prefix + (f"🚨 e-GP Alert {now:%d/%m/%Y}: ยื่นราคาได้ {n_bid} · เตรียมของ {n_prep} · "
-                         f"{f'แผนใหม่ {n_plan} · ' if n_plan else ''}"
-                         f"ใหม่รวม {n_daily} โครงการ{weekly_note}" if n_daily
-                         else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่{weekly_note}")
+                         f"{f'แผนใหม่ {n_plan} · ' if n_plan else ''}ใหม่รวม {len(rows)} โครงการ" if rows
+                         else f"ℹ️ e-GP Alert {now:%d/%m/%Y}: ไม่มีโครงการใหม่")
 
     def emails(value):
         return [e.strip() for e in (value or "").split(",") if e.strip()]
@@ -503,10 +360,10 @@ def main():
     def send_personal(to, prefix, suffix):
         for i, email in enumerate(to):
             token = token_of(email)
-            body, rows, outcomes, xlsx = make(loop=True, suffix=f"{suffix}{i}", token=token)
+            body, rows, xlsx = make(suffix=f"{suffix}{i}", token=token)
             if token is None:
                 print(f"::warning::{email} is not a Lead Loop user; sent without web links")
-            send(subject(rows, outcomes, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
+            send(subject(rows, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
         print(f"{prefix.strip() or 'personal copies'} sent to {len(to)} recipient(s)")
 
     def editors():
@@ -519,14 +376,14 @@ def main():
     loop_value = (os.environ.get("LOOP_RECIPIENTS") or "").strip()
     loop_to = editors() if loop_value.lower() == "all" else emails(loop_value)
     if not args.send:
-        make(loop=True)  # previews show everything, trial parts included (no personal links)
+        make()  # previews show everything, trial parts included (no personal links)
         return
 
     if args.to:  # a test send, and the "since" window of the real digest stays put
         if args.monitor:
             token = token_of(MONITOR_ACCOUNT)
-            body, rows, outcomes, xlsx = make(loop=True, suffix="_test_monitor", token=token, label=VIEW)
-            send(subject(rows, outcomes), body, None if token else xlsx, emails(args.to),
+            body, rows, xlsx = make(suffix="_test_monitor", token=token, label=VIEW)
+            send(subject(rows), body, None if token else xlsx, emails(args.to),
                  sender_name=SENDER_NAME)
             print("Monitor test copy sent")
         else:
@@ -540,8 +397,8 @@ def main():
     monitor_token = token_of(MONITOR_ACCOUNT)
     if monitor_token is None:
         print(f"::warning::{MONITOR_ACCOUNT} is not in lead_users; team email sent with Excel and no links")
-    body, rows, outcomes, xlsx = make(loop=True, suffix="_team", token=monitor_token, label=VIEW)
-    send(subject(rows, outcomes), body, None if monitor_token else xlsx, recipients, sender_name=SENDER_NAME)
+    body, rows, xlsx = make(suffix="_team", token=monitor_token, label=VIEW)
+    send(subject(rows), body, None if monitor_token else xlsx, recipients, sender_name=SENDER_NAME)
     db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
                           "recipients": ",".join(recipients)}, returning=False)
     print(f"sent to {len(recipients)} recipient(s)")

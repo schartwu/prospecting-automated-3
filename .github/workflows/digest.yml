@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       args:
-        description: "e.g. --since-days 3 --weekly yes   (add --send to email; --to a@b.com for a test)"
+        description: "e.g. --since-days 3   (add --send to email; --to a@b.com for a test)"
         default: ""
 
 jobs:

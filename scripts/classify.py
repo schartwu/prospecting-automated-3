@@ -4,8 +4,8 @@ Clear-cut titles are decided by keyword rules (egp/rules.py); only the ambiguous
 which keeps us inside the free-tier quota. When Gemini is out of quota or overloaded, the rule verdicts
 are still saved and the ambiguous titles simply wait for the next run, so the job does not fail.
 
-Only announcement types that lead to a sale or tell us who buys what are classified. Cancellations and
-changes (D1, W1, D2, W2) are looked up by project number when the digest is built.
+Only announcement types that lead to a sale or tell us who buys what are classified, plus W2 (winners
+changed) so its document is read like a W0. Cancellations and D2/W1 are looked up by project number.
 """
 import argparse
 import os
@@ -17,7 +17,7 @@ from egp.classify import classify_titles  # noqa: E402
 from egp.gemini import Gemini, QuotaExhausted, list_models  # noqa: E402
 from egp.db import DB  # noqa: E402
 
-TYPES = ["P0", "15", "B0", "D0", "W0"]
+TYPES = ["P0", "15", "B0", "D0", "W0", "W2"]
 
 
 def main():
