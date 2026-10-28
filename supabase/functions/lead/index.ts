@@ -27,6 +27,13 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// The API hands back at most 1,000 rows per call (PostgREST max rows), so each list comes back from
+// web_list() as one JSON array. Without it, "ทั้งหมด" in ผลลัพธ์ stopped at 1,000 of 1,386 rows.
+async function allRows(kind: string, args: Record<string, unknown> = {}) {
+  const { data, error } = await db.rpc("web_list", { p_kind: kind, ...args });
+  return { data: (data ?? []) as unknown[], error };
+}
+
 function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -63,14 +70,13 @@ Deno.serve(async (req) => {
       const from = String(body.from ?? ""), to = String(body.to ?? "");
       const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
       if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
-      const fn = { items: "web_items", leads: "web_leads", outcomes: "web_outcomes" }[body.action as string]!;
-      const { data, error } = await db.rpc(fn, { p_from: from, p_to: to });
+      const { data, error } = await allRows(body.action as string, { p_from: from, p_to: to });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
       return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
     }
 
     case "tracking": {
-      const { data, error } = await db.rpc("web_tracking");
+      const { data, error } = await allRows("tracking");
       if (error) return reply({ error: "โหลดรายการติดตามไม่สำเร็จ" }, 500);
       return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
     }
