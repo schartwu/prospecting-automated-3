@@ -102,7 +102,7 @@ textarea { width: 100%; resize: vertical; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .frow { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
 .frow > .flabel { font-size: 13px; color: var(--muted); padding-top: 6px; }
-.filters { display: grid; gap: 10px; }
+.filters, .frows { display: grid; gap: 10px; }
 .ftoggle { display: none; }
 @media (max-width: 640px) {
   .frow { grid-template-columns: 1fr; gap: 4px; } .frow > .flabel { padding-top: 0; }
@@ -299,8 +299,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // วิธีจัดหา: a short badge, and three groups for the filters (plans carry no method: อื่น ๆ)
   const methodShort = m => !m ? "" : /e-bidding/i.test(m) ? "e-bidding" : /e-market/i.test(m) ? "e-market"
     : /เฉพาะเจาะจง/.test(m) ? "เฉพาะเจาะจง" : /คัดเลือก/.test(m) ? "คัดเลือก" : /สอบราคา/.test(m) ? "สอบราคา" : m;
-  const methodGroup = m => !m ? "other" : /e-bidding/i.test(m) ? "ebid" : /เฉพาะเจาะจง/.test(m) ? "specific" : "other";
-  const METHOD_FILTERS = [["all", "ทุกวิธี"], ["ebid", "e-bidding"], ["specific", "เฉพาะเจาะจง"], ["other", "อื่น ๆ"]];
+  const methodGroup = m => !m ? "other" : /e-bidding/i.test(m) ? "ebid" : /e-market/i.test(m) ? "emarket" : /เฉพาะเจาะจง/.test(m) ? "specific" : "other";
+  const METHOD_FILTERS = [["all", "ทุกวิธี"], ["ebid", "e-bidding"], ["emarket", "e-market"], ["specific", "เฉพาะเจาะจง"], ["other", "อื่น ๆ"]];
   const inMethod = (k, r) => k === "all" || methodGroup(r.method) === k;
   const methodPill = m => m ? `<span class="pill" title="${esc(m)}">${esc(methodShort(m))}</span>` : "";
   // W2 changed the winner, W1 withdrew it (back to waiting for the result)
@@ -353,7 +353,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     l: { type: "D0", score: "all", method: "all", status: "all", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", score: "all", method: "all", shown: 100 },
-    o: { score: "all" },
+    o: { score: "all", method: "all" },
   };
   const per = () => state.per[currentView] || state.per.leads;
   const mayEdit = () => !!state.user && EDITORS.includes(state.user.role);
@@ -487,8 +487,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // ---------------- ภาพรวม ----------------
   function overview(body) {
     const O = state.o;
-    const leads = state.leads.filter(areaOk).filter(r => inBand(O.score, r));
-    const outs = state.outcomes.filter(o => o.kind === "result").filter(o => inBand(O.score, o));
+    const leads = state.leads.filter(areaOk).filter(r => inBand(O.score, r)).filter(r => inMethod(O.method, r));
+    const outs = state.outcomes.filter(o => o.kind === "result").filter(o => inBand(O.score, o)).filter(o => inMethod(O.method, o));
     const bidDone = r => r.status === "bid" || r.result === "lost" || r.result === "win";
     const moved = r => !!r.status || bidDone(r);
     const wins = outs.filter(o => o.ours && areaOk(o));
@@ -512,32 +512,33 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
     const all = state.leads.filter(areaOk);
     body.innerHTML = `
-      <div class="card">${scoreChips(O.score, all)}</div>
+      <div class="card frows">${scoreChips(O.score, all.filter(r => inMethod(O.method, r)))}${methodChips(O.method, all.filter(r => inBand(O.score, r)))}</div>
       <div class="kpis">
-        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview", score: O.score })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
-        <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview", score: O.score })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
+        <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
         <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
           <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
-        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview", score: O.score })}">ดูทั้งหมด →</a></div>
+        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview", score: O.score, method: O.method })}">ดูทั้งหมด →</a></div>
           <div>${top.map(mini).join("") || '<div class="empty">ไม่มี Lead ที่ระบุงบ</div>'}</div></div>
         <div class="stack">
         <div class="card"><h2>ความคืบหน้าของ Lead ในช่วงนี้</h2><div class="small muted">ไม่รวมแผนจัดซื้อ</div>
           <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
         <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
           <div class="tbl split"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
-          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (ไม่รวมที่เลยวันยื่นซองโดยไม่มีใครอัปเดต)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
-          <tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (ไม่รวมที่เลยวันยื่นซองโดยไม่มีใครอัปเดต)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
+          <tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>
           <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
           </tbody></table></div>
-          <div class="tbl split plans"><table>${COLS}<tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
+          <div class="tbl split plans"><table>${COLS}<tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
           </tbody></table></div></div>
         </div>
       </div>`;
     body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { O.score = b.dataset.score; overview(body); });
+    body.querySelectorAll("[data-method]").forEach(b => b.onclick = () => { O.method = b.dataset.method; overview(body); });
   }
 
   // ---------------- Lead ----------------
@@ -723,7 +724,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       + (R.rival === n ? `<tr class="sub"><td colspan="3"><div class="small muted" style="margin-bottom:4px">โครงการที่ ${esc(n)} ชนะในช่วงนี้</div>
         ${r.rows.sort(byPrice).map(o => `<div class="mini"><span class="t">${proj(o)}</span><span class="amt">${baht(o.winner_price)}</span><span class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")} · ประกาศ ${esc(thDate(o.pub_date))}</span></div>`).join("")}</td></tr>` : ""));
     body.innerHTML = `
-      <div class="card filters-card">${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}${methodChips(R.method, area.filter(o => inBand(R.score, o)))}</div>
+      <div class="card frows">${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}${methodChips(R.method, area.filter(o => inBand(R.score, o)))}</div>
       <div class="kpis">
         ${tile("wins", "win", "OfficeMate ชนะ", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`)}
         ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
@@ -903,7 +904,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const lead = p.get("lead");
     const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
     if (p.get("status")) state.l.status = p.get("status");
-    if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; }
+    if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = p.get("method") || "all"; }
     if (p.get("sort")) state.l.sort = p.get("sort");
     if (lead) { renderNav(p.get("from") || "leads"); return showLead(lead, p.get("from")); }
     currentView = view;
