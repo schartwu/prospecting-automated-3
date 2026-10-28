@@ -526,11 +526,11 @@ def main():
         if args.monitor:
             token = token_of(MONITOR_ACCOUNT)
             body, rows, outcomes, xlsx = make(loop=True, suffix="_test_monitor", token=token, label=VIEW)
-            send(subject(rows, outcomes, "[ทดสอบ Monitor] "), body, None if token else xlsx, emails(args.to),
+            send(subject(rows, outcomes), body, None if token else xlsx, emails(args.to),
                  sender_name=SENDER_NAME)
             print("Monitor test copy sent")
         else:
-            send_personal(emails(args.to), "[ทดสอบ] ", "_test")
+            send_personal(emails(args.to), "", "_test")
         return
 
     # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
