@@ -7,3 +7,6 @@ __pycache__/
 out/
 data/runs/
 docs/eGP-Alert-v3-Technical-Manual.docx
+
+# Manuals, mockups and notes stay on this computer only (the repository is public)
+docs/
