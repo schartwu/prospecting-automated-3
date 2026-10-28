@@ -115,15 +115,22 @@ def lead_key(r):
     return f"P:{r['plan_no']}" if r["announce_type"] == "P0" and r.get("plan_no") else r.get("project_no")
 
 
-def update_button(url):
+UPDATE, VIEW = "อัปเดตสถานะ", "ดูรายละเอียด"  # button text for DV/Sale, and for Monitors (read only)
+# The Monitors' email goes to RECEIVER_EMAIL as one message, so it carries one shared read-only link: the
+# lead_users row with this placeholder address (role viewer). Changing its token changes the link for all.
+MONITOR_ACCOUNT = "monitor@kg-lead.local"
+WEB_MORE = "ดูทั้งหมดในเว็บ KG Lead"
+
+
+def update_button(url, label=UPDATE):
     return (f'<div style="margin-top:4px"><a href="{html.escape(url)}" style="display:inline-block;'
             'background:#0b6e69;color:#ffffff;text-decoration:none;font-size:12px;padding:3px 10px;'
-            'border-radius:5px">อัปเดตสถานะ</a></div>')
+            f'border-radius:5px">{label}</a></div>')
 
 
-def section_html(heading, hint, rows, today, results=False, app_link=None):
+def section_html(heading, hint, rows, today, results=False, app_link=None, label=UPDATE, excel=True):
     """results=True (W0): the money and date columns show the winning price and the winner instead.
-    app_link(key) -> the reader's own link to that lead in the web app (KG Lead Loop trial), or None."""
+    app_link(key) -> the reader's link to that lead in the web app, or None (then the Excel file is attached)."""
     out = [f'<h3 style="margin:24px 0 4px">{html.escape(heading)} ({len(rows)})</h3>',
            f'<div style="color:#666;font-size:13px;margin-bottom:8px">{html.escape(hint)}</div>']
     shown, rows = rows, rows[:EMAIL_ROW_LIMIT]
@@ -133,7 +140,8 @@ def section_html(heading, hint, rows, today, results=False, app_link=None):
     money_head, last_head = ("ราคาที่ชนะ (บาท)", "ผู้ชนะ") if results else ("งบ (บาท)", "วันยื่นซอง")
     out.append('<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
                '<tr style="background:#f2f2f2;text-align:left"><th>คะแนน</th><th>โครงการ</th><th>หน่วยงาน</th>'
-               f'<th>{money_head}</th><th>{last_head}</th><th>วันที่ประกาศ</th></tr>')
+               f'<th style="white-space:nowrap">{money_head}</th><th style="white-space:nowrap">{last_head}</th>'
+               '<th style="white-space:nowrap">วันที่ประกาศ</th></tr>')
     for r in rows:
         flags = ", ".join(TYPE_LABEL.get(s, s) for s in (r.get("stages") or []) if s != r["announce_type"])
         badges = ' <b style="color:#1f7a3a">[OfficeMate ชนะ]</b>' if results and is_ours(r.get("winners")) else ""
@@ -144,7 +152,7 @@ def section_html(heading, hint, rows, today, results=False, app_link=None):
         sub = " · ".join(filter(None, [r.get("category"), r.get("reason"),
                                        f"มีประกาศ: {flags}" if flags else None]))
         if app_link and not results and lead_key(r):
-            badges += update_button(app_link(lead_key(r)))
+            badges += update_button(app_link(lead_key(r)), label)
         out.append(
             "<tr style='border-top:1px solid #eee;vertical-align:top'>"
             f"<td><b>{r['score']}</b></td>"
@@ -152,13 +160,14 @@ def section_html(heading, hint, rows, today, results=False, app_link=None):
             f"<div style='color:#888;font-size:12px'>{html.escape(sub)}</div></td>"
             f"<td>{html.escape(r.get('dept_name') or '')}"
             f"<div style='color:#888;font-size:12px'>{html.escape(r.get('province') or 'ไม่ระบุจังหวัด')}</div></td>"
-            f"<td style='text-align:right'>{fmt_money(r.get('winner_price') if results else r.get('budget_thb'))}</td>"
-            f"<td>{html.escape(r.get('winners') or '-') if results else bid_cell(r, today)}</td>"
-            f"<td>{r.get('pub_date') or ''}</td></tr>")
+            f"<td style='text-align:right;white-space:nowrap'>{fmt_money(r.get('winner_price') if results else r.get('budget_thb'))}</td>"
+            + (f"<td>{html.escape(r.get('winners') or '-')}</td>" if results
+               else f"<td style='white-space:nowrap'>{bid_cell(r, today)}</td>")
+            + f"<td style='white-space:nowrap'>{r.get('pub_date') or ''}</td></tr>")
     out.append("</table>")
     if len(shown) > len(rows):
         out.append(f'<div style="color:#666;font-size:12px">แสดง {len(rows)} อันดับแรก '
-                   f'จาก {len(shown)} รายการ · ดูทั้งหมดในไฟล์ Excel แนบ</div>')
+                   f'จาก {len(shown)} รายการ · {"ดูทั้งหมดในไฟล์ Excel แนบ" if excel else WEB_MORE}</div>')
     return "\n".join(out)
 
 
@@ -167,7 +176,7 @@ def is_ours(winners) -> bool:
     return bool(winners) and re.search(r"ออฟฟิศ\s*เมท", winners.replace("ํา", "ำ")) is not None
 
 
-def small_table(headers, rows, numeric=()):
+def small_table(headers, rows, numeric=(), more='ดูทั้งหมดในแท็บ "ผลลัพธ์" ของไฟล์ Excel'):
     """rows: lists of cell values; columns named in `numeric` are money, right-aligned."""
     out = ['<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%;margin-bottom:8px">'
            '<tr style="background:#f2f2f2;text-align:left">' + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"]
@@ -182,13 +191,14 @@ def small_table(headers, rows, numeric=()):
     out.append("</table>")
     if len(rows) > EMAIL_ROW_LIMIT:
         out.append(f'<div style="color:#666;font-size:12px">แสดง {EMAIL_ROW_LIMIT} จาก {len(rows)} รายการ '
-                   '· ดูทั้งหมดในแท็บ "ผลลัพธ์" ของไฟล์ Excel</div>')
+                   f'· {more}</div>')
     return "\n".join(out)
 
 
-def outcomes_html(rows, targets):
+def outcomes_html(rows, targets, excel=True):
     """Monday: what happened to the leads, read from e-GP itself (W0 winners, D1 cancellations).
     Returns (html, rows for the Excel tab)."""
+    more = 'ดูทั้งหมดในแท็บ "ผลลัพธ์" ของไฟล์ Excel' if excel else WEB_MORE + " หน้า ผลลัพธ์"
     def link(r):
         return f"<a href=\"{html.escape(r['link'])}\">{html.escape(r['title'][:160])}</a>"
 
@@ -228,23 +238,23 @@ def outcomes_html(rows, targets):
             [[link(r), where(r), r.get("winner_price"),
               ", ".join(TYPE_LABEL.get(t, t) for t in r["lead_types"]) if r.get("lead_types")
               else "<span style='color:#888'>ไม่มี (เช่น เฉพาะเจาะจง)</span>"] for r in wins],
-            numeric={"ราคาที่ชนะ (บาท)"}))
+            numeric={"ราคาที่ชนะ (บาท)"}, more=more))
     if lost:
         out.append("<b>Lead ที่บริษัทอื่นชนะ</b> <span style='color:#888;font-size:12px'>"
                    "(เคยส่งเป็นประกาศเชิญชวน/ร่าง TOR/ราคากลาง)</span>")
         out.append(small_table(
             ["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ (บาท)", "งบ (บาท)"],
             [[link(r), where(r), html.escape(r["winners"]), r.get("winner_price"), r.get("budget_thb")] for r in lost],
-            numeric={"ราคาที่ชนะ (บาท)", "งบ (บาท)"}))
+            numeric={"ราคาที่ชนะ (บาท)", "งบ (บาท)"}, more=more))
     if cancelled:
         out.append("<b>Lead ที่ถูกยกเลิก</b>")
         out.append(small_table(["โครงการ", "หน่วยงาน", "งบ (บาท)"],
-                               [[link(r), where(r), r.get("budget_thb")] for r in cancelled], numeric={"งบ (บาท)"}))
+                               [[link(r), where(r), r.get("budget_thb")] for r in cancelled], numeric={"งบ (บาท)"}, more=more))
     if top:
         out.append("<b>คู่แข่งที่ชนะบ่อย</b> <span style='color:#888;font-size:12px'>(จังหวัดเป้าหมายและไม่ระบุจังหวัด)</span>")
         out.append(small_table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม (บาท)"],
                                [[html.escape(name), n, total] for name, (n, total) in top],
-                               numeric={"มูลค่ารวม (บาท)"}))
+                               numeric={"มูลค่ารวม (บาท)"}, more=more))
 
     def label(r):
         if r["kind"] == "cancelled":
@@ -259,13 +269,15 @@ def outcomes_html(rows, targets):
 
 
 def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, targets: set[str],
-          with_outcomes: bool = True, app_link=None, board_link=None):
+          with_outcomes: bool = True, app_link=None, board_link=None, label=UPDATE):
+    """With app_link/board_link the lists live on the web app and no Excel is attached."""
+    excel = board_link is None
     """Returns (email html, rows in the email, rows clearly in other provinces, Monday outcome rows)."""
     today = now.date()
     parts, all_rows, elsewhere, outcome_rows = [], [], [], []
     if weekly and with_outcomes:
         rows = db.rpc("outcome_items", {"p_since": (now - timedelta(days=7)).isoformat()})
-        section, outcome_rows = outcomes_html(rows, targets)
+        section, outcome_rows = outcomes_html(rows, targets, excel)
         parts.append(section)
     for types, heading, hint, when, sec_min in SECTIONS:
         if (when == "weekly" and not weekly) or (when == "not_weekly" and weekly):
@@ -287,7 +299,8 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
                 left = days_left(r, today)
                 return (left is None or left < 0, left if left is not None else 999, -r["score"])
             rows.sort(key=urgency)
-        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"], app_link=app_link))
+        parts.append(section_html(heading, hint, rows, today, results=types == ["W0"], app_link=app_link,
+                                  label=label, excel=excel))
         all_rows += [{**r, "section": heading, "days_left": days_left(r, today)} for r in rows]
 
     total = len(all_rows)
@@ -297,15 +310,14 @@ def build(db: DB, since: datetime, now: datetime, weekly: bool, min_score: int, 
             f'รวม {total} รายการ (คะแนน ≥ {min_score})<br>เฉพาะจังหวัด: {html.escape(", ".join(sorted(targets)))} '
             f'และประกาศที่ไม่ระบุจังหวัด (ส่วนใหญ่เป็นส่วนกลาง)'
             + (f' · จังหวัดอื่น {len(elsewhere)} รายการ'
-               + (' ดูในเว็บ KG Lead แท็บ "รายการ (จังหวัดอื่น)"' if board_link
+               + (' ดูในเว็บ KG Lead เลือกพื้นที่ "จังหวัดอื่น"' if board_link
                   else ' อยู่ในแท็บ "รายการ (จังหวัดอื่น)" ของไฟล์ Excel') if elsewhere else '')
             + '</div>'
             + (f'<div style="margin-top:8px"><a href="{html.escape(board_link)}" style="color:#0b6e69;font-weight:bold">'
                'เปิด KG Lead: รายการทั้งหมด ผลลัพธ์ และสถานะ (ย้อนดูได้ทุกวัน) →</a></div>' if board_link else ''))
     bands = " · ".join(f"{b} {d}" for b, d in SCORE_BANDS[:4])
     foot = (f'<p style="color:#999;font-size:12px;margin-top:24px">คะแนน = ความตรงกับสินค้า OfficeMate: '
-            f'{html.escape(bands)}<br>งบ = ราคากลางจากเอกสารประกาศ · ไฟล์ Excel แนบมีรายการทั้งหมดและแท็บคำอธิบาย '
-            '· ระบบ e-GP Alert v3</p></div>')
+            f'{html.escape(bands)}</p></div>')
     return head + "\n".join(parts) + foot, all_rows, elsewhere, outcome_rows
 
 
@@ -400,7 +412,7 @@ def style_sheet(ws, number_cols=frozenset(), wrap_cols=None):
     ws.auto_filter.ref = ws.dimensions
 
 
-SENDER_NAME = "KG Lead (e-GP Alert)"  # personal KG Lead copies; the team digest keeps the bare address for now
+SENDER_NAME = "KG Lead (e-GP Alert)"  # shown instead of the bare sender address
 
 
 def send(subject, html_body, attachment, recipients, sender_name=None):
@@ -425,6 +437,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--send", action="store_true", help="actually email it (default: preview files only)")
     ap.add_argument("--to", default="", help="override recipients (comma separated) for tests")
+    ap.add_argument("--monitor", action="store_true", help="with --to: send the Monitors' version instead")
     ap.add_argument("--since-days", type=float, default=0, help="ignore the last digest; look back N days")
     ap.add_argument("--weekly", choices=["auto", "yes", "no"], default="auto")
     ap.add_argument("--min-score", type=int, default=50)
@@ -445,13 +458,13 @@ def main():
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
 
-    def make(loop: bool, suffix: str = "", token: str | None = None):
+    def make(loop: bool, suffix: str = "", token: str | None = None, label: str = UPDATE):
         """loop=True adds the KG Lead Loop parts (Monday outcomes; with the reader's token, an "อัปเดตสถานะ"
         button on every lead and a link to the lead board). While those are on trial they go only to
         LOOP_RECIPIENTS; the team's digest stays as it was."""
         app_link = (lambda key: f"{LEAD_APP_URL}#t={token}&lead={quote(key)}") if token else None
         body, rows, elsewhere, outcomes = build(db, since, now, weekly, args.min_score, targets, with_outcomes=loop,
-                                                app_link=app_link,
+                                                app_link=app_link, label=label,
                                                 board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
         xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}{suffix}.xlsx")
         write_xlsx(rows, xlsx, elsewhere, outcomes)
@@ -484,7 +497,7 @@ def main():
     def token_of(email):
         """The person's own web-app link token, if they are a Lead Loop user. Each of them gets their own
         copy of the email, since the links inside identify the reader."""
-        found = db.select("lead_users", select="token", email=f"eq.{email}", active="eq.true")
+        found = db.select("lead_users", select="token", email=f"eq.{email.lower()}", active="eq.true")
         return found[0]["token"] if found else None
 
     def send_personal(to, prefix, suffix):
@@ -494,26 +507,46 @@ def main():
             if token is None:
                 print(f"::warning::{email} is not a Lead Loop user; sent without web links")
             send(subject(rows, outcomes, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
-        print(f"{prefix.strip()} sent to {len(to)} recipient(s)")
+        print(f"{prefix.strip() or 'personal copies'} sent to {len(to)} recipient(s)")
 
-    loop_to = emails(os.environ.get("LOOP_RECIPIENTS"))
+    def editors():
+        """Everyone who updates leads (DV and Sales), from the KG Lead user list."""
+        rows = db.select("lead_users", select="email", role="in.(dv,sale)", active="eq.true", order="id")
+        return [r["email"] for r in rows]
+
+    # LOOP_RECIPIENTS: "all" = every active DV/Sale gets their own copy; otherwise only the addresses listed
+    # (while trying things out).
+    loop_value = (os.environ.get("LOOP_RECIPIENTS") or "").strip()
+    loop_to = editors() if loop_value.lower() == "all" else emails(loop_value)
     if not args.send:
         make(loop=True)  # previews show everything, trial parts included (no personal links)
         return
 
-    if args.to:  # a test send: the full version, and the "since" window of the real digest stays put
-        send_personal(emails(args.to), "[ทดสอบ] ", "_test")
+    if args.to:  # a test send, and the "since" window of the real digest stays put
+        if args.monitor:
+            token = token_of(MONITOR_ACCOUNT)
+            body, rows, outcomes, xlsx = make(loop=True, suffix="_test_monitor", token=token, label=VIEW)
+            send(subject(rows, outcomes, "[ทดสอบ Monitor] "), body, None if token else xlsx, emails(args.to),
+                 sender_name=SENDER_NAME)
+            print("Monitor test copy sent")
+        else:
+            send_personal(emails(args.to), "[ทดสอบ] ", "_test")
         return
 
     # DIGEST_RECIPIENTS (a repository variable) overrides the team list, e.g. for a trial period.
     recipients = emails(os.environ.get("DIGEST_RECIPIENTS") or os.environ["RECEIVER_EMAIL"])
-    body, rows, outcomes, xlsx = make(loop=not loop_to)
-    send(subject(rows, outcomes), body, xlsx, recipients)
+    # The Monitors read only: one message with the shared read-only link; the lists are on the web app.
+    # Without that account the old team email (Excel attached, no links) goes out instead.
+    monitor_token = token_of(MONITOR_ACCOUNT)
+    if monitor_token is None:
+        print(f"::warning::{MONITOR_ACCOUNT} is not in lead_users; team email sent with Excel and no links")
+    body, rows, outcomes, xlsx = make(loop=True, suffix="_team", token=monitor_token, label=VIEW)
+    send(subject(rows, outcomes), body, None if monitor_token else xlsx, recipients, sender_name=SENDER_NAME)
     db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
                           "recipients": ",".join(recipients)}, returning=False)
     print(f"sent to {len(recipients)} recipient(s)")
-    if loop_to:  # every day: the trial copy carries the status buttons
-        send_personal(loop_to, "[ทดลอง Lead Loop] ", "_trial")
+    if loop_to:  # every day: each DV/Sale their own copy with the "อัปเดตสถานะ" buttons
+        send_personal(loop_to, "", "_personal")
 
 
 if __name__ == "__main__":

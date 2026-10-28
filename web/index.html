@@ -6,6 +6,9 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>KG Lead</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap">
@@ -503,7 +506,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   // ---------------- Lead ----------------
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["P0", "แผนจัดซื้อ"]];
+  // latest stage first, the order things happen read backwards (as in ภาพรวม)
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"]];
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true], ["none", "ยังไม่มีสถานะ", r => !r.status],
     ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต", missed],
     ["doing", "กำลังทำ", r => ["received", "contacted", "sent_to_mer", "mer_replied", "other"].includes(r.status)],
