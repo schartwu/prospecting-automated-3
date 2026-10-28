@@ -512,7 +512,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
     const all = state.leads.filter(areaOk);
     body.innerHTML = `
-      <div class="card frows">${scoreChips(O.score, all.filter(r => inMethod(O.method, r)))}${methodChips(O.method, all.filter(r => inBand(O.score, r)))}</div>
+      <div class="card frows">${methodChips(O.method, all.filter(r => inBand(O.score, r)))}${scoreChips(O.score, all.filter(r => inMethod(O.method, r)))}</div>
       <div class="kpis">
         <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
@@ -575,8 +575,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const byType = r => L.type === "all" || r.type === L.type, byScore = r => inBand(L.score, r), byMethod = r => inMethod(L.method, r);
     const byText = r => !q || `${r.title} ${r.dept_name} ${r.province || ""} ${r.project_no || ""} ${r.plan_no || ""} ${r.linked_plan || ""}`.toLowerCase().includes(q);
     const rows = area.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).sort(SORTS[L.sort][1]);
-    const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.score !== "all" && SCORE_FILTERS.find(f => f[0] === L.score)[1],
-      L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
+    const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
+      L.score !== "all" && SCORE_FILTERS.find(f => f[0] === L.score)[1],
       L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], q && `“${L.q.trim()}”`].filter(Boolean);
     body.innerHTML = `
       <div class="card">
@@ -584,8 +584,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <div class="filters ${L.fopen ? "open" : ""}">
         ${frow("ประเภท", TYPE_FILTERS.map(([k, l]) =>
           `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(r => k === "all" || r.type === k).length}</span></button>`).join(""))}
-        ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
         ${methodChips(L.method, area.filter(byType).filter(byScore).filter(sf).filter(byText))}
+        ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
         ${frow("สถานะ", STATUS_FILTERS.map(([k, l, f]) =>
           `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(byType).filter(byScore).filter(byMethod).filter(byText).filter(f).length}</span></button>`).join(""))}
         <div class="toolrow">
@@ -724,7 +724,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       + (R.rival === n ? `<tr class="sub"><td colspan="3"><div class="small muted" style="margin-bottom:4px">โครงการที่ ${esc(n)} ชนะในช่วงนี้</div>
         ${r.rows.sort(byPrice).map(o => `<div class="mini"><span class="t">${proj(o)}</span><span class="amt">${baht(o.winner_price)}</span><span class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")} · ประกาศ ${esc(thDate(o.pub_date))}</span></div>`).join("")}</td></tr>` : ""));
     body.innerHTML = `
-      <div class="card frows">${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}${methodChips(R.method, area.filter(o => inBand(R.score, o)))}</div>
+      <div class="card frows">${methodChips(R.method, area.filter(o => inBand(R.score, o)))}${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}</div>
       <div class="kpis">
         ${tile("wins", "win", "OfficeMate ชนะ", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`)}
         ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
