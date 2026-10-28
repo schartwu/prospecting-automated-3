@@ -103,6 +103,7 @@ textarea { width: 100%; resize: vertical; }
 .frow { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
 .frow > .flabel { font-size: 13px; color: var(--muted); padding-top: 6px; }
 .filters, .frows { display: grid; gap: 10px; }
+.gcol { display: grid; gap: 16px; align-content: start; min-width: 0; }
 .ftoggle { display: none; }
 @media (max-width: 640px) {
   .frow { grid-template-columns: 1fr; gap: 4px; } .frow > .flabel { padding-top: 0; }
@@ -789,7 +790,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
         <dt>${scoreBadge(50)} 59–50</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
         <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div>
-      <div class="card legend"><h2>วิธีจัดหา</h2><dl>
+      <div class="gcol"><div class="card legend"><h2>วิธีจัดหา</h2><dl>
         <dt>e-bidding</dt><dd>ประกวดราคาอิเล็กทรอนิกส์ ยื่นเอกสารและราคาในระบบ e-GP ภายในวันยื่นซอง (วงเงินเกิน 5 แสนบาท)</dd>
         <dt>e-market</dt><dd>สินค้าทั่วไปที่มีสเปกในแคตตาล็อก e-GP ยื่นราคาในระบบ e-GP</dd>
         <dt>เฉพาะเจาะจง</dt><dd>หน่วยงานเชิญผู้ขายเอง ส่วนใหญ่ไม่เกิน 5 แสนบาท ไม่มีประกาศเชิญชวน จึงแทบไม่เป็น Lead แต่ขึ้นในผลลัพธ์เมื่อประกาศผู้ชนะ</dd>
@@ -802,7 +803,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt><span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ</span></dt><dd>หน่วยงานยกเลิกผู้ชนะ (W1) โครงการกลับไปรอผล กดอัปเดตสถานะได้อีกครั้ง</dd>
         <dt>โครงการหายจากหน้า Lead</dt><dd>เมื่อมีประกาศผู้ชนะแล้ว โครงการไม่ใช่ Lead อีก ดูต่อได้ในผลลัพธ์และติดตามสถานะ (บรรทัดใต้ตัวกรองบอกจำนวนที่ซ่อน)</dd>
         <dt>ปุ่มอัปเดตสถานะถูกปิด</dt><dd>โครงการที่ประกาศผู้ชนะแล้วหรือถูกยกเลิก เพราะสถานะทั้งหมดเป็นขั้นก่อนรู้ผล</dd>
-        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd></dl></div></div>`;
+        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd></dl></div></div></div>`;
   }
 
   // ---------------- one lead ----------------
