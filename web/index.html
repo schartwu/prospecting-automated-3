@@ -363,10 +363,11 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
   // One status per lead, first match wins: cancelled, then what someone pressed, then a bid day that passed
   // with nobody pressing anything, else no status yet. The Lead filters count each lead once.
-  const leadState = r => r.cancelled ? "cancelled" : r.status === "bid" ? "bid" : r.status === "no_bid" ? "no_bid"
-    : r.status ? "doing" : missed(r) ? "missed" : "none";
+  const leadState = r => r.cancelled ? "cancelled" : r.awarded ? "awarded" : r.status === "bid" ? "bid"
+    : r.status === "no_bid" ? "no_bid" : r.status ? "doing" : missed(r) ? "missed" : "none";
   const leadPill = r => { const st = leadState(r);
     return st === "cancelled" ? '<span class="pill bad">ยกเลิกแล้ว</span>'
+      : st === "awarded" ? (r.result ? statusPill(r.status, r.status_by, r.status_at) : '<span class="pill">ประกาศผู้ชนะแล้ว</span>')
       : st === "missed" ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : statusPill(r.status, r.status_by, r.status_at); };
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
@@ -502,13 +503,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const wins = outs.filter(o => o.ours && areaOk(o));
     const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
     // every count leaves the plans out (they have their own box under the table by type)
-    const noStatus = announced.filter(r => !moved(r) && leadState(r) === "none");
+    const noStatus = announced.filter(r => leadState(r) === "none");
     const bid = announced.filter(bidDone);
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["D0", "15", "B0"].map(t => [t, leads.filter(r => r.type === t && !missed(r))]);
-    const letGo = leads.filter(missed);
+    const byType = ["D0", "15", "B0"].map(t => [t, leads.filter(r => r.type === t)]);
+    const letGo = leads.filter(r => leadState(r) === "missed");
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
       ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
       ["ยื่นราคาแล้ว", bid.length],
@@ -517,13 +518,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
       <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (${dueText(r.bid_date)})</span>` : ""}</span>
       <span>${statusPill(r.status)}</span></a>`;
+    const MISSED_ROW = `<tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">↳ ⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">อยู่ในประกาศเชิญชวนข้างบน: ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>`;
     const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
     const all = state.leads.filter(areaOk);
     body.innerHTML = `
       <div class="card frows">${methodChips(O.method, all.filter(r => inBand(O.score, r)))}${scoreChips(O.score, all.filter(r => inMethod(O.method, r)))}</div>
       <div class="kpis">
-        <a class="kpi" href="${href({ v: "leads", type: "all", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
-        <a class="kpi alert" href="${href({ v: "leads", type: "all", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "np", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
+        <a class="kpi alert" href="${href({ v: "leads", type: "np", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
         <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (ทุกงาน)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))} · รวมเฉพาะเจาะจง</span></a>
       </div>
@@ -537,8 +539,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
           <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
         <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
           <div class="tbl split"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
-          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (ไม่รวมที่เลยวันยื่นซองโดยไม่มีใครอัปเดต)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>`).join("")}
-          <tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (รวมที่เลยวันยื่นซองแล้ว)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW : ""}`).join("")}
           <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
           </tbody></table></div>
           <div class="tbl split plans"><table>${COLS}<tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
@@ -561,10 +562,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const SCORE_FILTERS = [["all", "ทุกช่วงคะแนน"], ...SCORE_BANDS];
   const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"]];
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["np", "ทั้งหมด ยกเว้นแผน"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"]];
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true],
     ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"], ["bid", "ยื่นแล้ว"], ["no_bid", "ไม่ยื่น"],
-      ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"]].map(([k, l]) => [k, l, r => leadState(r) === k])];
+      ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]].map(([k, l]) => [k, l, r => leadState(r) === k])];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
     budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
     deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
@@ -573,13 +574,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   function leadsPage(body, redraw) {
     const L = state.l;
-    // a project whose winner is announced is no longer a lead; it lives on in ผลลัพธ์ and ติดตามสถานะ
-    const inArea = state.leads.filter(areaOk), area = inArea.filter(r => !r.awarded);
-    const awardedN = inArea.length - area.length;
+    // a project whose winner is announced is no longer a lead: it shows only under "ประกาศผู้ชนะแล้ว" (or ทุกสถานะ)
+    const area = state.leads.filter(areaOk);
     const sf = STATUS_FILTERS.find(f => f[0] === L.status)[2];
     const q = L.q.trim().toLowerCase();
     // each button counts what pressing it would show, with the other rows as they are
-    const byType = r => L.type === "all" || r.type === L.type, byScore = r => inBand(L.score, r), byMethod = r => inMethod(L.method, r);
+    const isType = (k, r) => k === "all" || (k === "np" ? r.type !== "P0" : r.type === k);
+    const byType = r => isType(L.type, r), byScore = r => inBand(L.score, r), byMethod = r => inMethod(L.method, r);
     const byText = r => !q || `${r.title} ${r.dept_name} ${r.province || ""} ${r.project_no || ""} ${r.plan_no || ""} ${r.linked_plan || ""}`.toLowerCase().includes(q);
     const rows = area.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).sort(SORTS[L.sort][1]);
     const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
@@ -590,7 +591,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <button class="btn ftoggle" type="button" id="ftog" aria-expanded="${!!L.fopen}"><span>ตัวกรอง: ${esc(picked.join(" · ") || "ทั้งหมด")}</span><span>${L.fopen ? "▲" : "▼"}</span></button>
         <div class="filters ${L.fopen ? "open" : ""}">
         ${frow("ประเภท", TYPE_FILTERS.map(([k, l]) =>
-          `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(r => k === "all" || r.type === k).length}</span></button>`).join(""))}
+          `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(r => isType(k, r)).length}</span></button>`).join(""))}
         ${methodChips(L.method, area.filter(byType).filter(byScore).filter(sf).filter(byText))}
         ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
         ${frow("สถานะ", STATUS_FILTERS.map(([k, l, f]) =>
@@ -603,7 +604,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         </div>
         ${picked.length ? '<div><button class="btn sm" type="button" id="clear">ล้างตัวกรอง</button></div>' : ""}
         </div>
-        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))} · โครงการที่มีหลายประกาศแสดงครั้งเดียวตามประกาศล่าสุด${awardedN ? ` · ซ่อน ${awardedN} โครงการที่ประกาศผู้ชนะแล้ว (ดูในแท็บผลลัพธ์)` : ""}</div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))} · โครงการที่มีหลายประกาศแสดงครั้งเดียวตามประกาศล่าสุด</div>
       </div>
       <div class="list">${rows.slice(0, L.shown).map(leadCard).join("") || '<div class="card empty">ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่</div>'}</div>
       ${rows.length > L.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - L.shown})</button></div>` : ""}`;
@@ -939,6 +940,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
     const sync = state.per[p.get("sync")];
     if (sync && state.per[view] && sync !== state.per[view]) Object.assign(state.per[view], sync);
+    // The filters a link carried are applied once; the address keeps only the page, so a reload (Ctrl+F5)
+    // opens the defaults again instead of the filters of the last link.
+    if (["status", "type", "sort", "score", "method", "sync"].some(k => p.has(k)))
+      history.replaceState(null, "", href({ v: view }));
     if (view === "guide") return guide();
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
     const build = { overview, leads: leadsPage, results }[view];
