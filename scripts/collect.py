@@ -41,12 +41,14 @@ NATIONWIDE = "(ไม่ระบุหน่วยงาน)"
 def build_requests(db: DB, args) -> list[tuple[dict, dict]]:
     """(params, extra) pairs. extra is stored next to each item (dept_name)."""
     if args.mode == "daily":
-        depts = db.select("departments", param="eq.deptId", active="is.true", select="code,name",
+        # deptId: ministries' departments (4 digits) and local governments (7 digits, e.g. 3100001
+        # กรุงเทพมหานคร); deptsubId: purchasing units (15 digits) of departments that fill 20 items a day.
+        depts = db.select("departments", param="in.(deptId,deptsubId)", active="is.true", select="code,name,param",
                           order="code")
         mine = [d for i, d in enumerate(depts) if i % args.shards == args.shard]
         types = DAILY_TYPES + (WEEKLY_TYPES if datetime.now(BKK).weekday() == WEEKLY_DAY else [])
         reqs = [({"anounceType": t}, {"dept_name": NATIONWIDE}) for t in types] if args.shard == 0 else []
-        reqs += [({"deptId": d["code"], "anounceType": t}, {"dept_name": d["name"]})
+        reqs += [({d["param"]: d["code"], "anounceType": t}, {"dept_name": d["name"]})
                  for d in mine for t in types]
         return reqs
     if args.mode == "capped":

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp.db import DB  # noqa: E402
 
 FAIL_LIMIT = 0.5
-SHARDS = 3            # daily.yml collects on three machines
+SHARDS = 8            # daily.yml collects on eight machines
 LOOK_BACK_HOURS = 8   # the run starts at 18:00 and loads by about 21:00
 
 
@@ -60,7 +60,7 @@ def main():
     msg.set_content(
         "รอบดึงข้อมูลเย็นนี้ (Daily pipeline) มีปัญหา:\n\n"
         + "\n".join(f"- {p}" for p in found)
-        + f"\n\nได้รายการ {items:,} รายการ (ปกติราว 3,000–4,000)\n\n"
+        + f"\n\nได้รายการ {items:,} รายการ (ก่อนเพิ่มหน่วยงานท้องถิ่นวันที่ 29 ต.ค. 69 ปกติราว 3,000–4,000)\n\n"
           "ผลที่ตามมา: อีเมลเช้าพรุ่งนี้อาจมีรายการน้อยกว่าปกติ\n"
           "ไม่ต้องทำอะไรถ้าเป็นแค่คืนเดียว: RSS ย้อนหลังได้ราว 1 สัปดาห์ รอบเย็นถัดไปจะเก็บย้อนให้เอง\n"
           "ถ้าเกิดหลายคืนติดกัน: ดู log ของ job collect ใน GitHub Actions → Daily pipeline "
