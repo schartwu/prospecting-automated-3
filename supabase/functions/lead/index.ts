@@ -6,6 +6,8 @@
 //   board  -> leads of the last `days` days in Sales' provinces, with latest status and e-GP outcome
 //   lead   -> {announcements, events} of one lead
 //   save   -> add one status (role dv or sale; viewer only looks)
+//   ping   -> {device, view, visit}: the page is open (every minute) / a page was opened (visit = true)
+//   usage  -> who uses the web app (admin accounts only, ADMIN_EMAILS)
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -17,6 +19,10 @@ const PROVINCES = (Deno.env.get("TARGET_PROVINCES") ??
   "กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, " +
     "พระนครศรีอยุธยา, สระบุรี, นครนายก, ปราจีนบุรี, ฉะเชิงเทรา, ชลบุรี, ระยอง, จันทบุรี")
   .split(",").map((p) => p.trim()).filter(Boolean);
+
+// Who may read the usage summary. A function secret overrides it.
+const ADMIN_EMAILS = (Deno.env.get("ADMIN_EMAILS") ?? "schartwu@gmail.com").split(",").map((e) => e.trim().toLowerCase());
+const VIEWS = ["leads", "tracking", "results", "overview", "guide", "usage", "lead"];
 
 const STATUSES = ["received", "contacted", "sent_to_mer", "mer_replied", "bid", "no_bid", "other"];
 const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
@@ -55,13 +61,30 @@ Deno.serve(async (req) => {
   if (!/^[0-9a-f]{64}$/.test(token)) return reply({ error: "ลิงก์ไม่ถูกต้อง" }, 401);
 
   const { data: user, error: userErr } = await db.from("lead_users")
-    .select("id, name, role").eq("token", token).eq("active", true).maybeSingle();
+    .select("id, name, role, email").eq("token", token).eq("active", true).maybeSingle();
   if (userErr) return reply({ error: "ระบบขัดข้อง ลองใหม่อีกครั้ง" }, 500);
   if (!user) return reply({ error: "ลิงก์นี้ใช้ไม่ได้แล้ว ติดต่อผู้ดูแลระบบ" }, 401);
+  const admin = ADMIN_EMAILS.includes(String(user.email).toLowerCase());
 
   switch (body.action) {
     case "me":
-      return reply({ name: user.name, role: user.role });
+      return reply({ name: user.name, role: user.role, admin });
+
+    case "ping": {
+      const device = String(body.device ?? ""), view = String(body.view ?? "");
+      if (!/^[0-9a-f]{16}$/.test(device) || !VIEWS.includes(view)) return reply({ error: "รูปแบบคำขอไม่ถูกต้อง" }, 400);
+      const { error } = await db.from("lead_presence")
+        .upsert({ user_id: user.id, device, view, last_seen: new Date().toISOString() }, { onConflict: "user_id,device" });
+      if (!error && body.visit === true) await db.from("lead_visits").insert({ user_id: user.id, device, view });
+      return reply({ ok: !error });
+    }
+
+    case "usage": {
+      if (!admin) return reply({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
+      const { data, error } = await db.rpc("web_usage");
+      if (error) return reply({ error: "โหลดข้อมูลการใช้งานไม่สำเร็จ" }, 500);
+      return reply({ user: { name: user.name, role: user.role, admin }, ...data });
+    }
 
     case "items":
     case "leads":
@@ -72,26 +95,26 @@ Deno.serve(async (req) => {
       if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
       const { data, error } = await allRows(body.action as string, { p_from: from, p_to: to });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
+      return reply({ user: { name: user.name, role: user.role, admin }, provinces: PROVINCES, rows: data });
     }
 
     case "tracking": {
       const { data, error } = await allRows("tracking");
       if (error) return reply({ error: "โหลดรายการติดตามไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role }, provinces: PROVINCES, rows: data });
+      return reply({ user: { name: user.name, role: user.role, admin }, provinces: PROVINCES, rows: data });
     }
 
     case "days": {
       const { data, error } = await db.rpc("web_email_days");
       if (error) return reply({ error: "โหลดปฏิทินไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role }, days: data });
+      return reply({ user: { name: user.name, role: user.role, admin }, days: data });
     }
 
     case "board": {
       const days = Math.min(Math.max(Number(body.days) || 30, 1), 120);
       const { data, error } = await db.rpc("lead_board", { p_days: days, p_provinces: PROVINCES });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role }, leads: data });
+      return reply({ user: { name: user.name, role: user.role, admin }, leads: data });
     }
 
     case "lead": {
@@ -100,7 +123,7 @@ Deno.serve(async (req) => {
       const { data, error } = await db.rpc("lead_detail", { p_key: key });
       if (error) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
       if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
-      return reply({ user: { name: user.name, role: user.role }, ...data });
+      return reply({ user: { name: user.name, role: user.role, admin }, ...data });
     }
 
     case "save": {

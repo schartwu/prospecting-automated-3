@@ -280,6 +280,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
     ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
     ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
+    ["usage", "การใช้งาน", '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M21 20a6 6 0 0 0-4-5.6"/>'],
   ];
 
   // ---------------- helpers ----------------
@@ -335,6 +336,55 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     }
     if (data.provinces) state.provinces = data.provinces;
     return data;
+  }
+
+  // ---------------- usage ----------------
+  // A random id this browser keeps, so a shared link (Monitor) still counts devices. No IP is stored.
+  const device = (() => {
+    const make = () => [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, "0")).join("");
+    try { let d = localStorage.getItem("kg-device"); if (!/^[0-9a-f]{16}$/.test(d || "")) { d = make(); localStorage.setItem("kg-device", d); } return d; }
+    catch (e) { return make(); }
+  })();
+  let pingView = null;
+  const ping = (view, visit) => { pingView = view; api("ping", { device, view, visit }).catch(() => {}); };
+  // every minute while the page is in front: "online now" = a ping in the last 2 minutes
+  setInterval(() => { if (pingView && document.visibilityState === "visible") ping(pingView, false); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
+
+  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
+  async function usagePage() {
+    main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
+    let u;
+    try { u = await api("usage"); } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    const ago = t => { if (!t) return '<span class="muted">ยังไม่เคยเข้า</span>'; const m = Math.round((Date.now() - new Date(t)) / 60000);
+      return m < 2 ? "เมื่อสักครู่" : m < 60 ? `${m} นาทีที่แล้ว` : m < 1440 ? `${Math.round(m / 60)} ชั่วโมงที่แล้ว` : thTime(t); };
+    const never = u.people.filter(x => !x.last_visit);
+    const pages = Object.entries(u.pages || {}).sort((a, b) => b[1] - a[1]);
+    main.innerHTML = `
+      <div class="kpis">
+        <div class="kpi win"><span class="label">ออนไลน์ตอนนี้</span><span class="value">${u.online.length}</span><span class="sub">${u.online_devices} อุปกรณ์ · เปิดหน้าเว็บค้างไว้ใน 2 นาทีล่าสุด</span></div>
+        <div class="kpi"><span class="label">เข้าใช้วันนี้</span><span class="value">${u.today_people}</span><span class="sub">${u.today_devices} อุปกรณ์</span></div>
+        <div class="kpi"><span class="label">เข้าใช้ 7 วันล่าสุด</span><span class="value">${u.week_people}</span><span class="sub">${u.week_devices} อุปกรณ์</span></div>
+        <div class="kpi alert"><span class="label">ยังไม่เคยเข้า</span><span class="value">${never.length}</span><span class="sub">จาก ${u.people.length} บัญชี</span></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="section-head"><h2>ออนไลน์ตอนนี้</h2><button class="btn sm" type="button" id="refresh">โหลดใหม่</button></div>
+          ${u.online.length ? `<div class="tbl"><table><thead><tr><th>ใคร</th><th>กำลังดู</th><th>อุปกรณ์</th></tr></thead><tbody>${u.online.map(o =>
+            `<tr><td>${esc(o.name)}<div class="small muted">${esc(ROLE[o.role] || o.role)}</div></td><td>${esc(VIEW_NAME[o.view] || o.view)}</td><td class="num">${o.devices}</td></tr>`).join("")}</tbody></table></div>`
+            : '<div class="small muted">ไม่มีใครเปิดหน้าเว็บอยู่</div>'}</div>
+        <div class="card"><h2>หน้าที่ถูกเปิด (7 วัน)</h2>
+          ${pages.length ? `<div class="tbl"><table><thead><tr><th>หน้า</th><th>ครั้ง</th></tr></thead><tbody>${pages.map(([k, n]) =>
+            `<tr><td>${esc(VIEW_NAME[k] || k)}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}</div>
+      </div>
+      <div class="card"><div class="section-head"><h2>รายคน</h2><span class="small muted">Monitor ทุกคนใช้บัญชี Monitor (รวม) บัญชีเดียว จึงนับเป็นจำนวนอุปกรณ์</span></div>
+        <div class="tbl"><table><thead><tr><th>ใคร</th><th>เข้าล่าสุด</th><th>วันที่เข้า (7 วัน)</th><th>ครั้ง (7 วัน)</th><th>อุปกรณ์ (7 วัน)</th></tr></thead><tbody>
+        ${u.people.map(x => `<tr><td>${esc(x.name)}<div class="small muted">${esc(ROLE[x.role] || x.role)}</div></td><td>${ago(x.last_visit)}</td>
+          <td class="num">${x.days_7}</td><td class="num">${x.views_7}</td><td class="num">${x.devices_7}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="card"><h2>รายวัน (14 วัน)</h2>
+        ${u.days.length ? `<div class="tbl"><table><thead><tr><th>วัน</th><th>คน</th><th>อุปกรณ์</th><th>เปิดหน้า</th></tr></thead><tbody>${[...u.days].reverse().map(d =>
+          `<tr><td>${esc(thDate(d.day))}</td><td class="num">${d.people}</td><td class="num">${d.devices}</td><td class="num">${d.views}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}
+        <div class="small muted">นับจากการเปิดหน้าเว็บ (ไม่รวมอีเมล) · ไม่เก็บ IP · เก็บย้อนหลัง 180 วัน</div></div>`;
+    document.getElementById("refresh").onclick = usagePage;
   }
 
   function download(name, rows) {
@@ -411,7 +461,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   // ---------------- layout pieces ----------------
   function renderNav(view) {
-    document.getElementById("nav").innerHTML = VIEWS.map(([k, label, icon]) =>
+    document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => k !== "usage" || (state.user && state.user.admin)).map(([k, label, icon]) =>
       `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${label}</a>`).join("");
   }
 
@@ -810,7 +860,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt><span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ</span></dt><dd>หน่วยงานยกเลิกผู้ชนะ (W1) โครงการกลับไปรอผล กดอัปเดตสถานะได้อีกครั้ง</dd>
         <dt>โครงการหายจากหน้า Lead</dt><dd>เมื่อมีประกาศผู้ชนะแล้ว โครงการไม่ใช่ Lead อีก ดูต่อได้ในผลลัพธ์และติดตามสถานะ (บรรทัดใต้ตัวกรองบอกจำนวนที่ซ่อน)</dd>
         <dt>ปุ่มอัปเดตสถานะถูกปิด</dt><dd>โครงการที่ประกาศผู้ชนะแล้วหรือถูกยกเลิก เพราะสถานะทั้งหมดเป็นขั้นก่อนรู้ผล</dd>
-        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd></dl></div></div></div>`;
+        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd>
+        <dt>การบันทึกการใช้งาน</dt><dd>ระบบบันทึกว่าบัญชีไหนเปิดหน้าไหนเมื่อไร เพื่อดูภาพรวมการใช้งาน ไม่เก็บ IP เก็บย้อนหลัง 180 วัน</dd></dl></div></div></div>`;
   }
 
   // ---------------- one lead ----------------
@@ -933,12 +984,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (p.get("status")) state.l.status = p.get("status");
     if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = p.get("method") || "all"; }
     if (p.get("sort")) state.l.sort = p.get("sort");
-    if (lead) { renderNav(p.get("from") || "leads"); return showLead(lead, p.get("from")); }
+    if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
     currentView = view;
     renderNav(view);
     try {
       if (!state.days.length) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    renderNav(view);  // now the account is known (the usage tab shows for admins only)
+    ping(view, true);
     const sync = state.per[p.get("sync")];
     if (sync && state.per[view] && sync !== state.per[view]) Object.assign(state.per[view], sync);
     // The filters a link carried are applied once; the address keeps only the page, so a reload (Ctrl+F5)
@@ -946,6 +999,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (["status", "type", "sort", "score", "method", "sync"].some(k => p.has(k)))
       history.replaceState(null, "", href({ v: view }));
     if (view === "guide") return guide();
+    if (view === "usage") return usagePage();
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
     const build = { overview, leads: leadsPage, results }[view];
     return page(view, build, { load: ensureRange });
