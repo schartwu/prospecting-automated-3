@@ -217,6 +217,9 @@ table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--soft); white-space: nowrap; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl th.c, .tbl td.c { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl tr.dim td { color: var(--muted); }
+.tbl th.grp { text-align: center; border-bottom: 1px solid var(--line); }
 td.num.money { color: var(--money); font-weight: 500; }
 tr:last-child td { border-bottom: 0; }
 
@@ -352,39 +355,53 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
 
   const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
-  async function usagePage() {
-    main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
+  let usageTimer = null;
+  async function usagePage(quiet) {
+    if (!quiet) main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
     let u;
     try { u = await api("usage"); } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
-    const ago = t => { if (!t) return '<span class="muted">ยังไม่เคยเข้า</span>'; const m = Math.round((Date.now() - new Date(t)) / 60000);
+    if (currentView !== "usage") return;
+    const ago = t => { if (!t) return "ยังไม่เคยเข้า"; const m = Math.max(0, Math.round((Date.now() - new Date(t)) / 60000));
       return m < 2 ? "เมื่อสักครู่" : m < 60 ? `${m} นาทีที่แล้ว` : m < 1440 ? `${Math.round(m / 60)} ชั่วโมงที่แล้ว` : thTime(t); };
-    const never = u.people.filter(x => !x.last_visit);
+    const others = u.people.filter(x => !x.admin);
+    const never = others.filter(x => !x.last_visit);
+    const onlineOthers = u.online.filter(o => !o.admin);
+    // people: most recent first, never visited last, the admin at the very end
+    const people = [...u.people].sort((x, y) => (!!x.admin - !!y.admin) || ((y.last_visit ? 1 : 0) - (x.last_visit ? 1 : 0))
+      || String(y.last_visit).localeCompare(String(x.last_visit)));
     const pages = Object.entries(u.pages || {}).sort((a, b) => b[1] - a[1]);
+    const who = x => `${esc(x.name)}<div class="small muted">${esc(ROLE[x.role] || x.role)}${x.admin ? " · ไม่นับในยอดรวม" : ""}</div>`;
     main.innerHTML = `
+      <div class="small muted" style="margin-bottom:8px">ยอดรวมทุกช่องไม่นับบัญชีผู้ดูแลระบบ (การทดสอบจะทำให้ตัวเลขสูงเกินจริง) · อัปเดตเองทุก 1 นาที</div>
       <div class="kpis">
-        <div class="kpi win"><span class="label">ออนไลน์ตอนนี้</span><span class="value">${u.online.length}</span><span class="sub">${u.online_devices} อุปกรณ์ · เปิดหน้าเว็บค้างไว้ใน 2 นาทีล่าสุด</span></div>
-        <div class="kpi"><span class="label">เข้าใช้วันนี้</span><span class="value">${u.today_people}</span><span class="sub">${u.today_devices} อุปกรณ์</span></div>
-        <div class="kpi"><span class="label">เข้าใช้ 7 วันล่าสุด</span><span class="value">${u.week_people}</span><span class="sub">${u.week_devices} อุปกรณ์</span></div>
-        <div class="kpi alert"><span class="label">ยังไม่เคยเข้า</span><span class="value">${never.length}</span><span class="sub">จาก ${u.people.length} บัญชี</span></div>
+        <div class="kpi win"><span class="label">ออนไลน์ตอนนี้</span><span class="value">${onlineOthers.length}</span><span class="sub">คน · ${onlineOthers.reduce((a, o) => a + o.devices, 0)} อุปกรณ์ ที่เปิดหน้าเว็บอยู่</span></div>
+        <div class="kpi"><span class="label">เข้าใช้วันนี้</span><span class="value">${u.today_people}</span><span class="sub">คน · ${u.today_devices} อุปกรณ์</span></div>
+        <div class="kpi"><span class="label">เข้าใช้ 7 วันล่าสุด</span><span class="value">${u.week_people}</span><span class="sub">คน จาก ${others.length} บัญชี · ${u.week_devices} อุปกรณ์</span></div>
+        <div class="kpi alert"><span class="label">ยังไม่เคยเข้าเลย</span><span class="value">${never.length}</span><span class="sub">${never.length ? esc(never.map(x => x.name.replace(/\s*\(.*\)$/, "")).slice(0, 4).join(", ")) + (never.length > 4 ? " …" : "") : "ทุกบัญชีเคยเข้าแล้ว"}</span></div>
       </div>
       <div class="grid2">
         <div class="card"><div class="section-head"><h2>ออนไลน์ตอนนี้</h2><button class="btn sm" type="button" id="refresh">โหลดใหม่</button></div>
-          ${u.online.length ? `<div class="tbl"><table><thead><tr><th>ใคร</th><th>กำลังดู</th><th>อุปกรณ์</th></tr></thead><tbody>${u.online.map(o =>
-            `<tr><td>${esc(o.name)}<div class="small muted">${esc(ROLE[o.role] || o.role)}</div></td><td>${esc(VIEW_NAME[o.view] || o.view)}</td><td class="num">${o.devices}</td></tr>`).join("")}</tbody></table></div>`
-            : '<div class="small muted">ไม่มีใครเปิดหน้าเว็บอยู่</div>'}</div>
-        <div class="card"><h2>หน้าที่ถูกเปิด (7 วัน)</h2>
-          ${pages.length ? `<div class="tbl"><table><thead><tr><th>หน้า</th><th>ครั้ง</th></tr></thead><tbody>${pages.map(([k, n]) =>
-            `<tr><td>${esc(VIEW_NAME[k] || k)}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}</div>
+          <div class="small muted" style="margin-bottom:6px">คนที่เปิดหน้าเว็บค้างไว้ภายใน 2 นาทีล่าสุด</div>
+          ${u.online.length ? `<div class="tbl"><table><thead><tr><th>ใคร</th><th>กำลังดูหน้า</th><th class="c">อุปกรณ์</th></tr></thead><tbody>${u.online.map(o =>
+            `<tr><td>${who(o)}</td><td>${esc(VIEW_NAME[o.view] || o.view)}</td><td class="c">${o.devices}</td></tr>`).join("")}</tbody></table></div>`
+            : '<div class="small muted">ตอนนี้ไม่มีใครเปิดหน้าเว็บ</div>'}</div>
+        <div class="card"><h2>หน้าที่ถูกเปิดบ่อย</h2><div class="small muted" style="margin-bottom:6px">7 วันล่าสุด (วันนี้และ 6 วันก่อนหน้า)</div>
+          ${pages.length ? `<div class="tbl"><table><thead><tr><th>หน้า</th><th class="c">เปิด (ครั้ง)</th></tr></thead><tbody>${pages.map(([k, n]) =>
+            `<tr><td>${esc(VIEW_NAME[k] || k)}</td><td class="c">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}</div>
       </div>
-      <div class="card"><div class="section-head"><h2>รายคน</h2><span class="small muted">Monitor ทุกคนใช้บัญชี Monitor (รวม) บัญชีเดียว จึงนับเป็นจำนวนอุปกรณ์</span></div>
-        <div class="tbl"><table><thead><tr><th>ใคร</th><th>เข้าล่าสุด</th><th>วันที่เข้า (7 วัน)</th><th>ครั้ง (7 วัน)</th><th>อุปกรณ์ (7 วัน)</th></tr></thead><tbody>
-        ${u.people.map(x => `<tr><td>${esc(x.name)}<div class="small muted">${esc(ROLE[x.role] || x.role)}</div></td><td>${ago(x.last_visit)}</td>
-          <td class="num">${x.days_7}</td><td class="num">${x.views_7}</td><td class="num">${x.devices_7}</td></tr>`).join("")}</tbody></table></div></div>
-      <div class="card"><h2>รายวัน (14 วัน)</h2>
-        ${u.days.length ? `<div class="tbl"><table><thead><tr><th>วัน</th><th>คน</th><th>อุปกรณ์</th><th>เปิดหน้า</th></tr></thead><tbody>${[...u.days].reverse().map(d =>
-          `<tr><td>${esc(thDate(d.day))}</td><td class="num">${d.people}</td><td class="num">${d.devices}</td><td class="num">${d.views}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}
-        <div class="small muted">นับจากการเปิดหน้าเว็บ (ไม่รวมอีเมล) · ไม่เก็บ IP · เก็บย้อนหลัง 180 วัน</div></div>`;
-    document.getElementById("refresh").onclick = usagePage;
+      <div class="card"><div class="section-head"><h2>รายคน</h2><span class="small muted">Monitor ทุกคนใช้บัญชี Monitor (รวม) บัญชีเดียว จึงดูจากจำนวนอุปกรณ์แทน</span></div>
+        <div class="tbl"><table><thead>
+          <tr><th rowspan="2">ใคร</th><th rowspan="2">เข้าใช้ล่าสุด</th><th class="grp" colspan="4">ใน 7 วันล่าสุด (วันนี้และ 6 วันก่อนหน้า)</th></tr>
+          <tr><th class="c">เข้ากี่วัน</th><th class="c">เปิดหน้า (ครั้ง)</th><th class="c">อุปกรณ์ (เครื่อง)</th><th class="c">กดสถานะ (ครั้ง)</th></tr></thead><tbody>
+        ${people.map(x => `<tr class="${x.last_visit ? "" : "dim"}"><td>${who(x)}</td><td>${ago(x.last_visit)}</td>
+          <td class="c">${x.days_7} / 7</td><td class="c">${x.views_7}</td><td class="c">${x.devices_7}</td><td class="c">${x.role === "viewer" ? "–" : x.updates_7}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="card"><h2>รายวัน</h2><div class="small muted" style="margin-bottom:6px">14 วันล่าสุด · วันที่ไม่มีใครเข้าไม่แสดง</div>
+        ${u.days.length ? `<div class="tbl"><table><thead><tr><th>วัน</th><th class="c">คน</th><th class="c">อุปกรณ์</th><th class="c">เปิดหน้า (ครั้ง)</th></tr></thead><tbody>${[...u.days].reverse().map(d =>
+          `<tr><td>${esc(thDate(d.day))}</td><td class="c">${d.people}</td><td class="c">${d.devices}</td><td class="c">${d.views}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}
+        <div class="small muted">นับจากการเปิดหน้าเว็บ (การเปิดอีเมลไม่นับ) · ไม่เก็บ IP · เก็บย้อนหลัง 180 วัน</div></div>`;
+    document.getElementById("refresh").onclick = () => usagePage(true);
+    clearTimeout(usageTimer);
+    usageTimer = setTimeout(() => { if (currentView === "usage" && document.visibilityState === "visible") usagePage(true); }, 60000);
   }
 
   function download(name, rows) {
@@ -999,7 +1016,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (["status", "type", "sort", "score", "method", "sync"].some(k => p.has(k)))
       history.replaceState(null, "", href({ v: view }));
     if (view === "guide") return guide();
-    if (view === "usage") return usagePage();
+    if (view === "usage") { currentView = "usage"; return usagePage(); }
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
     const build = { overview, leads: leadsPage, results }[view];
     return page(view, build, { load: ensureRange });

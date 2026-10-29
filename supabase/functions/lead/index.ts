@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
 
     case "usage": {
       if (!admin) return reply({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
-      const { data, error } = await db.rpc("web_usage");
+      const { data, error } = await db.rpc("web_usage", { p_exclude: ADMIN_EMAILS });
       if (error) return reply({ error: "โหลดข้อมูลการใช้งานไม่สำเร็จ" }, 500);
       return reply({ user: { name: user.name, role: user.role, admin }, ...data });
     }
