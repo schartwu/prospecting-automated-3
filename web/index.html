@@ -562,7 +562,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const SCORE_FILTERS = [["all", "ทุกช่วงคะแนน"], ...SCORE_BANDS];
   const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["np", "ทั้งหมด ยกเว้นแผน"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"]];
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"],
+    ["np", "ทั้งหมด ยกเว้นแผนจัดซื้อ"]];
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true],
     ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"], ["bid", "ยื่นแล้ว"], ["no_bid", "ไม่ยื่น"],
       ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]].map(([k, l]) => [k, l, r => leadState(r) === k])];
