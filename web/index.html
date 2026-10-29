@@ -351,7 +351,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     user: null, provinces: [], days: [], area: "target",
     per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" } },
     cache: {}, leads: null, outcomes: null, tracking: null,
-    l: { type: "D0", score: "all", method: "all", status: "all", q: "", sort: "score", shown: 60 },
+    l: { type: "D0", score: "all", method: "all", status: "none", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", score: "all", method: "all", shown: 100 },
     o: { score: "all", method: "all" },
@@ -361,6 +361,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
   const closed = r => !!(r.awarded || r.result || r.cancelled);
   const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
+  // One status per lead, first match wins: cancelled, then what someone pressed, then a bid day that passed
+  // with nobody pressing anything, else no status yet. The Lead filters count each lead once.
+  const leadState = r => r.cancelled ? "cancelled" : r.status === "bid" ? "bid" : r.status === "no_bid" ? "no_bid"
+    : r.status ? "doing" : missed(r) ? "missed" : "none";
+  const leadPill = r => { const st = leadState(r);
+    return st === "cancelled" ? '<span class="pill bad">ยกเลิกแล้ว</span>'
+      : st === "missed" ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : statusPill(r.status, r.status_by, r.status_at); };
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
   const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
@@ -473,10 +480,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
     return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
       <div style="display:grid;gap:5px;min-width:0">
-        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${statusPill(r.status, r.status_by, r.status_at)}${resultPill(r.result)}${changePill(r)}
-          ${missed(r) ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : ""}
+        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}
           ${r.linked_plan && r.type !== "P0" ? `<span class="pill" title="หน่วยงานเดียวกันและงบเท่ากันพอดี">🔗 จับคู่กับแผน ${esc(r.linked_plan)}</span>` : ""}
-          ${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}${r.amended ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
+          ${r.amended && !r.cancelled ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
       </div>
@@ -496,7 +502,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const wins = outs.filter(o => o.ours && areaOk(o));
     const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
     // every count leaves the plans out (they have their own box under the table by type)
-    const noStatus = announced.filter(r => !moved(r));
+    const noStatus = announced.filter(r => !moved(r) && leadState(r) === "none");
     const bid = announced.filter(bidDone);
     const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
@@ -556,10 +562,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
   const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"]];
-  const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true], ["none", "ยังไม่มีสถานะ", r => !r.status && r.result !== "win"],
-    ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต", missed],
-    ["doing", "กำลังทำ", r => ["received", "contacted", "sent_to_mer", "mer_replied", "other"].includes(r.status)],
-    ["bid", "ยื่นแล้ว", r => r.status === "bid"], ["no_bid", "ไม่ยื่น", r => r.status === "no_bid"]];
+  const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true],
+    ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"], ["bid", "ยื่นแล้ว"], ["no_bid", "ไม่ยื่น"],
+      ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"]].map(([k, l]) => [k, l, r => leadState(r) === k])];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
     budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
     deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
