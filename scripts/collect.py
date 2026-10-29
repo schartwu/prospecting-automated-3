@@ -43,8 +43,14 @@ def build_requests(db: DB, args) -> list[tuple[dict, dict]]:
     if args.mode == "daily":
         # deptId: ministries' departments (4 digits) and local governments (7 digits, e.g. 3100001
         # กรุงเทพมหานคร); deptsubId: purchasing units (15 digits) of departments that fill 20 items a day.
-        depts = db.select("departments", param="in.(deptId,deptsubId)", active="is.true", select="code,name,param",
-                          order="code")
+        # The API returns at most 1,000 rows per call, so read in pages.
+        depts = []
+        while True:
+            page = db.select("departments", param="in.(deptId,deptsubId)", active="is.true",
+                             select="code,name,param", order="code", limit=1000, offset=len(depts))
+            depts += page
+            if len(page) < 1000:
+                break
         mine = [d for i, d in enumerate(depts) if i % args.shards == args.shard]
         types = DAILY_TYPES + (WEEKLY_TYPES if datetime.now(BKK).weekday() == WEEKLY_DAY else [])
         reqs = [({"anounceType": t}, {"dept_name": NATIONWIDE}) for t in types] if args.shard == 0 else []
