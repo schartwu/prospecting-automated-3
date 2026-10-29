@@ -10,6 +10,14 @@ on:
         description: "Project number to look for"
         required: false
         default: ""
+      types:
+        description: "Announcement types"
+        required: false
+        default: "D0,15,B0,W0,P0"
+      params:
+        description: "deptId,deptsubId"
+        required: false
+        default: "deptId,deptsubId"
 
 jobs:
   probe:
@@ -24,4 +32,6 @@ jobs:
       - env:
           CODES: ${{ inputs.codes }}
           FIND: ${{ inputs.find }}
-        run: python scripts/probe_dept.py $CODES --find "$FIND"
+          TYPES: ${{ inputs.types }}
+          PARAMS: ${{ inputs.params }}
+        run: python scripts/probe_dept.py $CODES --find "$FIND" --types "$TYPES" --params "$PARAMS"
