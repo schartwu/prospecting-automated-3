@@ -79,8 +79,9 @@ def load_folder(db: DB, folder: str):
               id=f"eq.{run['id']}")
     print(f"loaded {source}: {len(unique)} unique items, {new} new")
 
-    capped = [{"dept_code": r["deptId"], "announce_type": r["anounceType"], "last_capped_at": started.isoformat()}
-              for r in reqs if r.get("capped") and r.get("deptId")]
+    capped = [{"dept_code": r.get("deptId") or r["deptsubId"], "announce_type": r["anounceType"],
+               "last_capped_at": started.isoformat()}
+              for r in reqs if r.get("capped") and (r.get("deptId") or r.get("deptsubId"))]
     if capped:
         db.upsert("capped_feeds", capped, on_conflict="dept_code,announce_type")
     if mode == "sweep":

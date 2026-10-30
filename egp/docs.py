@@ -176,8 +176,10 @@ WINNER_SCHEMA = {
 
 
 def parse_department(text: str) -> str | None:
-    """'(สำเนา) ประกาศกรมตรวจบัญชีสหกรณ์ เรื่อง ...' -> 'กรมตรวจบัญชีสหกรณ์' (top of D0/B0 announcements)."""
-    m = re.search(r"ประกาศ\s*([^|]{4,80}?)\s*\|?\s*เรื่อง", text[:600])
+    """'(สำเนา) ประกาศกรมตรวจบัญชีสหกรณ์ เรื่อง ...' -> 'กรมตรวจบัญชีสหกรณ์' (top of D0/B0 announcements).
+    W0 pages start with their title, 'ประกาศรายชื่อผู้ชนะการเสนอราคา ( สำเนา ) ประกาศ กรมชลประทาน เรื่อง',
+    so the name is what follows the last 'ประกาศ' before 'เรื่อง'."""
+    m = re.search(r"ประกาศ\s*((?:(?!ประกาศ)[^|]){4,80}?)\s*\|?\s*เรื่อง", text[:600])
     return m.group(1).strip() if m else None
 
 

@@ -11,6 +11,11 @@ D0 / B0 / 15 / P0 announcements, the winner and winning price from W0, and the p
   (egp/provinces.py). Central offices usually name none; the digest keeps those.
 
 Every announcement gets a details row, including failures (with the error), so it is not retried forever.
+
+Before the documents, one page per department still named "หน่วยงานรหัส ..." (local governments found by
+scripts/probe_local.py) is read for its name. The document server answers HTTP 511 when read too fast
+(seen 30 Oct 2026 after ~100 quick reads), so reads stay one at a time, pause after a refusal, and stop at
+--max-minutes; what is left waits for the next evening (30-day window).
 """
 import argparse
 import os
@@ -28,6 +33,9 @@ from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: 
 
 TYPES = ["D0", "B0", "15", "P0", "W0", "W2"]  # W2: winners changed, read like a W0
 SCAN_MODELS = [m for m in FLASH_FIRST if "lite" not in m]
+BACK_OFF_SECONDS = 20  # after a refused or timed-out read
+
+
 def transient(e: Exception) -> bool:
     """Server-side hiccups (HTTP 5xx such as 511, timeouts): leave the row unsaved so the next run retries."""
     if isinstance(e, (requests.ConnectionError, requests.Timeout)):
@@ -123,6 +131,7 @@ class Enricher:
         except Exception as e:  # recorded on the row so the digest still shows the announcement
             if transient(e):
                 self.stats["retry later"] += 1
+                time.sleep(BACK_OFF_SECONDS)
                 return
             self.stats["error"] += 1
             detail["error"] = f"{type(e).__name__}: {str(e)[:300]}"
@@ -152,6 +161,19 @@ class Enricher:
             detail["error"] = detail["error"] or ("no text in document" if len(text) <= 200 else "winner not found")
         self.save(detail)
 
+    def name_department(self, code, link):
+        """A department with a placeholder name: read one of its pages for the real name."""
+        try:
+            name = docs.parse_department(docs.normalize(docs.fetch_text(link)[0]))
+        except Exception as e:
+            self.stats["name retry later" if transient(e) else "name error"] += 1
+            if transient(e):
+                time.sleep(BACK_OFF_SECONDS)
+            return
+        if name:
+            self.db.rpc("set_department_name", {"p_code": code, "p_name": name})
+        self.stats["named" if name else "name not found"] += 1
+
     def add_province(self, link, rows):
         """Rows read before provinces were added: fetch the document again and add only the province."""
         try:
@@ -175,6 +197,7 @@ class Enricher:
         except Exception as e:
             if transient(e):
                 self.stats["retry later"] += len(rows)
+                time.sleep(BACK_OFF_SECONDS)
                 return
             lines, info, page, err = {}, {}, "", f"{type(e).__name__}: {str(e)[:300]}"
         else:
@@ -194,6 +217,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=800)  # ~830 relevant W0 a day since local governments were added
     ap.add_argument("--min-score", type=int, default=50)
+    ap.add_argument("--max-minutes", type=float, default=140,
+                    help="stop reading after this long (daily.yml's process job allows 200 minutes)")
+    ap.add_argument("--name-departments", type=int, default=60,
+                    help="departments with a placeholder name to read a page for, before the documents")
     ap.add_argument("--no-ai", action="store_true")
     ap.add_argument("--add-province-days", type=int, default=0,
                     help="instead: add the province to documents read in the last N days without one")
@@ -214,6 +241,13 @@ def main():
         print("DONE", dict(e.stats))
         return
 
+    deadline = time.monotonic() + args.max_minutes * 60
+    e = Enricher(db, gemini, not args.no_ai)
+    for d in db.rpc("departments_to_name", {"p_limit": args.name_departments}) if args.name_departments else []:
+        e.name_department(d["code"], d["link"])
+        time.sleep(1)
+    print(f"department names: {dict(e.stats)}", flush=True)
+
     rows = db.rpc("announcements_to_enrich", {"p_types": TYPES, "p_min_score": args.min_score,
                                               "p_limit": args.limit})
     plans = defaultdict(list)
@@ -224,13 +258,18 @@ def main():
     print(f"{len(others)} documents and {len(plans)} plan pages ({len(rows) - len(others)} plan lines) to read",
           flush=True)
 
-    e = Enricher(db, gemini, not args.no_ai)
-    for r in others:
-        e.document(r)
+    # Plans go before W0: the SQL order is D0, B0, 15, P0, W0, and W0 are most of the rows.
+    work = ([(e.document, (r,)) for r in others if r["announce_type"] != "W0"]
+            + [(e.plan_page, item) for item in plans.items()]
+            + [(e.document, (r,)) for r in others if r["announce_type"] == "W0"])
+    done = 0
+    for fn, fn_args in work:
+        if time.monotonic() > deadline:
+            print(f"time cap of {args.max_minutes} min reached; {len(work) - done} reads wait for the next run")
+            break
+        fn(*fn_args)
+        done += 1
         time.sleep(1)  # be gentle with the e-GP document server
-    for link, plan_rows in plans.items():
-        e.plan_page(link, plan_rows)
-        time.sleep(1)
     print("DONE", dict(e.stats))
 
 

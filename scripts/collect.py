@@ -30,10 +30,12 @@ BKK = ZoneInfo("Asia/Bangkok")
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 # The types the digest and the web app use.
-DAILY_TYPES = ["P0", "15", "B0", "D0", "W0", "D1", "D2"]
+DAILY_TYPES = ["P0", "15", "B0", "D0", "W0", "D1"]
 # Winners withdrawn (W1) or changed (W2) are rare, so they are fetched once a week, on Friday evening
-# (the RSS keeps about a week), and the web app shows the new result on Monday.
-WEEKLY_TYPES = ["W1", "W2"]
+# (the RSS keeps about a week), and the web app shows the new result on Monday. D2 (invitation changed)
+# returned no item at all from 2 to 29 Oct 2026, nationwide included, while costing 1 request in 7, so it
+# moved here too: kept weekly in case the feed starts serving it.
+WEEKLY_TYPES = ["W1", "W2", "D2"]
 WEEKLY_DAY = 4  # Friday
 NATIONWIDE = "(ไม่ระบุหน่วยงาน)"
 
