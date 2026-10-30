@@ -39,8 +39,8 @@ def main():
 
     # One fetch, most urgent types first (see unclassified_titles). Fetching everything at once keeps
     # rule-decidable titles from getting stuck behind ambiguous ones when Gemini is unavailable.
-    rows = db.rpc("unclassified_titles", {"p_types": TYPES, "p_limit": args.max_titles})
-    # PostgREST caps a response at 1000 rows; anything beyond is picked up by the next run.
+    # As one JSON array: a plain table response stops at 1,000 rows (PostgREST max rows).
+    rows = db.rpc("unclassified_titles_json", {"p_types": TYPES, "p_limit": args.max_titles})
 
     by_rule, for_ai = [], []
     for r in rows:
