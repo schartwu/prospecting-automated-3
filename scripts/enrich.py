@@ -112,7 +112,7 @@ class Enricher:
             self.fix_department_name(r, text)
             detail.update(budget_thb=budget, bid_date=bid.isoformat() if bid else None,
                           extracted={**info, "bid_time": bid_time, "source": source, "text_chars": len(text),
-                                     "scanned": scanned, "province": provinces.detect(r["title"], text)})
+                                     "scanned": scanned, "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], text)})
             if budget is None and bid is None:
                 self.stats["missing"] += 1
                 detail["error"] = detail["error"] or (
@@ -144,7 +144,7 @@ class Enricher:
             except RuntimeError as e:
                 detail["error"] = f"ai: {str(e)[:200]}"
         detail["extracted"] = {**info, "source": source, "text_chars": len(text), "winners": winners,
-                               "winner_price": price, "province": provinces.detect(r["title"], text)}
+                               "winner_price": price, "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], text)}
         if winners:
             self.stats["winner " + source.split(":")[0]] += 1
         else:
@@ -161,7 +161,7 @@ class Enricher:
             page = ""
         for r in rows:
             self.db.update("announcement_details",
-                           {"extracted": {**(r["extracted"] or {}), "province": provinces.detect(r["title"], page)}},
+                           {"extracted": {**(r["extracted"] or {}), "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], page)}},
                            announcement_id=f"eq.{r['id']}")
             self.stats["province added"] += 1
 
@@ -185,7 +185,7 @@ class Enricher:
                        "bid_date": None, "item_count": None,
                        "extracted": {**info, "source": "plan-page",
                                      "expected_month": line["expected_month"] if line else None,
-                                     "province": provinces.detect(r["title"], page)},
+                                     "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], page)},
                        "error": err or (None if line else "plan line not found on the page")})
             self.stats["plan" if line else "missing"] += 1
 

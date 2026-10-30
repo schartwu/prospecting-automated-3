@@ -40,6 +40,21 @@ def mentions(text: str) -> dict[str, int]:
     return counts
 
 
+# Local governments' 7-digit codes (and กรุงเทพมหานคร's 15-digit purchasing units) carry the province:
+# type + province + district + number, e.g. 6200102 = an อบต. in ชลบุรี (scripts/probe_local.py).
+CODE_PROVINCES = {"10": "กรุงเทพมหานคร", "11": "สมุทรปราการ", "12": "นนทบุรี", "13": "ปทุมธานี",
+                  "14": "พระนครศรีอยุธยา", "19": "สระบุรี", "20": "ชลบุรี", "21": "ระยอง", "22": "จันทบุรี",
+                  "24": "ฉะเชิงเทรา", "25": "ปราจีนบุรี", "26": "นครนายก", "73": "นครปฐม", "74": "สมุทรสาคร",
+                  "75": "สมุทรสงคราม"}
+
+
+def from_dept(code: str | None) -> str | None:
+    """The province a local government's code names; None for ministries' departments (4 digits)."""
+    if code and len(code) in (7, 15):
+        return CODE_PROVINCES.get(code[1:3])
+    return None
+
+
 def detect(title: str, document: str = "") -> str | None:
     """The province named in the title, else the one the document names most often."""
     for text in (title, document):
