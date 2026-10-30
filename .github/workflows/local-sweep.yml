@@ -1,0 +1,30 @@
+name: Find local governments (monthly sweep)
+
+# Local governments (อบจ./เทศบาล/อบต.) in Sales' provinces and กรุงเทพมหานคร purchasing units have codes the
+# night sweep never tries (scripts/probe_local.py). New ones are added to `departments`, so the next daily
+# run collects them. Started on the 1st of each month at 19:30 Bangkok by Supabase pg_cron
+# ('egp-local-sweep'), after the daily collection; can also be run by hand.
+on:
+  workflow_dispatch:
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+jobs:
+  # Eight machines, each with its own IP, so each can keep 2 requests in flight (HTTP 429 above that).
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/probe_local.py --save --shard ${{ matrix.shard }} --shards 8 --max-minutes 150
