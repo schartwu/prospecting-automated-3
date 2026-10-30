@@ -192,7 +192,7 @@ class Enricher:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=400)
+    ap.add_argument("--limit", type=int, default=800)  # ~830 relevant W0 a day since local governments were added
     ap.add_argument("--min-score", type=int, default=50)
     ap.add_argument("--no-ai", action="store_true")
     ap.add_argument("--add-province-days", type=int, default=0,
