@@ -81,3 +81,22 @@ jobs:
       - name: 4. Read documents (budget, bid date)
         if: always()
         run: python scripts/enrich.py
+
+  # Purchasing units seen in tonight's documents: units of capped departments in Sales' provinces join the
+  # collection, and unknown agencies' codes (universities...) are tried on the RSS (scripts/units.py).
+  units:
+    needs: process
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 5. Add purchasing units and new agencies
+        env:
+          TARGET_PROVINCES: ${{ vars.TARGET_PROVINCES }}
+        run: python scripts/units.py

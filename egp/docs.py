@@ -27,6 +27,11 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 ZIP_ORDER = [r"^annoudoc", r"^pB0", r"^doc_", r"\.pdf$"]
 
 
+# e-GP pages name their file after the purchasing unit that published them:
+# "templateName = 'announcewin_020473000005_69109346498.html'" (W0), 'aplt_020410000021_M69100035460.html' (P0).
+UNIT_IN_PAGE = re.compile(rb"templateName\s*=\s*'[A-Za-z]+_(\d{8,20})_")
+
+
 def fetch_text(url: str) -> tuple[str, dict, list[bytes]]:
     """Download the linked document. Returns (plain text, info about what was read, the short PDFs
     themselves). The PDFs are kept for scanned documents: they have no text layer, so Gemini reads
@@ -46,6 +51,9 @@ def fetch_text(url: str) -> tuple[str, dict, list[bytes]]:
         ordered = sorted(names, key=lambda n: next(i for i, p in enumerate(ZIP_ORDER) if re.search(p, n, re.I)))
         pdfs = [zf.read(n) for n in ordered if "tor" not in n.lower()][:3]
         return "\n".join(_pdf_text(b) for b in pdfs), info, pdfs
+    unit = UNIT_IN_PAGE.search(data[:20000])
+    if unit:
+        info["unit"] = unit.group(1).decode()
     if b"Request Rejected" in data[:500]:
         raise RuntimeError("e-GP firewall rejected the request")
     if "html" in info["content_type"].lower() and b"<table" in data.lower():

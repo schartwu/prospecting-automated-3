@@ -71,9 +71,26 @@ class Enricher:
     def __init__(self, db: DB, gemini: Gemini, use_ai: bool):
         self.db, self.gemini, self.ai_ok = db, gemini, use_ai
         self.stats = defaultdict(int)
+        self.units = []  # purchasing units named by the pages read (dept_units, scripts/units.py)
 
-    def save(self, detail):
+    def save(self, detail, dept_code=None):
         self.db.upsert("announcement_details", [detail], on_conflict="announcement_id")
+        extracted = detail.get("extracted") or {}
+        self.note_unit(extracted.get("unit"), dept_code, extracted.get("province"))
+
+    def note_unit(self, unit, dept_code, province=None):
+        """Remember which purchasing unit published a page; saved in batches (RPC note_units)."""
+        if not unit:
+            return
+        self.units.append({"code": unit, "parent_code": dept_code,
+                           "province": provinces.from_dept(unit) or province})
+        if len(self.units) >= 100:
+            self.flush_units()
+
+    def flush_units(self):
+        if self.units:
+            self.stats["units noted"] += self.db.rpc("note_units", {"p_rows": self.units})
+            self.units = []
 
     def fix_department_name(self, r, text):
         if r.get("dept_needs_name") and r.get("dept_code"):
@@ -135,7 +152,7 @@ class Enricher:
                 return
             self.stats["error"] += 1
             detail["error"] = f"{type(e).__name__}: {str(e)[:300]}"
-        self.save(detail)
+        self.save(detail, r.get("dept_code"))
 
     def winner(self, r, text, info, detail):
         """W0 / W2: who won and at what price."""
@@ -159,12 +176,14 @@ class Enricher:
         else:
             self.stats["missing"] += 1
             detail["error"] = detail["error"] or ("no text in document" if len(text) <= 200 else "winner not found")
-        self.save(detail)
+        self.save(detail, r.get("dept_code"))
 
     def name_department(self, code, link):
         """A department with a placeholder name: read one of its pages for the real name."""
         try:
-            name = docs.parse_department(docs.normalize(docs.fetch_text(link)[0]))
+            raw, info, _ = docs.fetch_text(link)
+            name = docs.parse_department(docs.normalize(raw))
+            self.note_unit(info.get("unit"), code)
         except Exception as e:
             self.stats["name retry later" if transient(e) else "name error"] += 1
             if transient(e):
@@ -209,7 +228,7 @@ class Enricher:
                        "extracted": {**info, "source": "plan-page",
                                      "expected_month": line["expected_month"] if line else None,
                                      "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], page)},
-                       "error": err or (None if line else "plan line not found on the page")})
+                       "error": err or (None if line else "plan line not found on the page")}, r.get("dept_code"))
             self.stats["plan" if line else "missing"] += 1
 
 
@@ -270,6 +289,7 @@ def main():
         fn(*fn_args)
         done += 1
         time.sleep(1)  # be gentle with the e-GP document server
+    e.flush_units()
     print("DONE", dict(e.stats))
 
 

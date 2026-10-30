@@ -25,6 +25,11 @@ ALIASES = {"กรุงเทพฯ": "กรุงเทพมหานคร"
 NEEDS_PREFIX = {"เลย", "แพร่", "ตาก", "น่าน", "ตรัง"}
 PREFIX = r"(?:จังหวัด|จ\.|จว\.)\s*"
 
+# Bangkok, its surrounding provinces and the east: the area the Sales team covers (2026-10-19).
+# TARGET_PROVINCES (repository variable) overrides it; see targets().
+DEFAULT_TARGETS = ("กรุงเทพมหานคร, นนทบุรี, ปทุมธานี, สมุทรปราการ, สมุทรสาคร, สมุทรสงคราม, นครปฐม, "
+                   "พระนครศรีอยุธยา, สระบุรี, นครนายก, ปราจีนบุรี, ฉะเชิงเทรา, ชลบุรี, ระยอง, จันทบุรี")
+
 _plain = sorted([p for p in PROVINCES if p not in NEEDS_PREFIX] + list(ALIASES), key=len, reverse=True)
 _PATTERN = re.compile(
     "(?:" + PREFIX + "(" + "|".join(sorted(PROVINCES + list(ALIASES), key=len, reverse=True)) + "))"
@@ -49,9 +54,13 @@ CODE_PROVINCES = {"10": "กรุงเทพมหานคร", "11": "สม
 
 
 def from_dept(code: str | None) -> str | None:
-    """The province a local government's code names; None for ministries' departments (4 digits)."""
+    """The province a department or unit code names; None for ministries' departments (4 digits) and
+    10-digit units. 12-digit purchasing units are department + province + number, e.g. 020473000005 =
+    กองทัพบก in นครปฐม (unit codes from documents, 30 Oct 2026)."""
     if code and len(code) in (7, 15):
         return CODE_PROVINCES.get(code[1:3])
+    if code and len(code) == 12:
+        return CODE_PROVINCES.get(code[4:6])
     return None
 
 
@@ -62,6 +71,12 @@ def detect(title: str, document: str = "") -> str | None:
         if counts:
             return max(counts, key=lambda p: (counts[p], -text.find(p)))
     return None
+
+
+def targets() -> set[str]:
+    """Sales' provinces: TARGET_PROVINCES, else DEFAULT_TARGETS."""
+    import os
+    return parse_targets(os.environ.get("TARGET_PROVINCES") or DEFAULT_TARGETS)
 
 
 def parse_targets(value: str) -> set[str]:
